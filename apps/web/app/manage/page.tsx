@@ -1,12 +1,13 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { api, type Asset, type Loan, type Household } from "@/lib/api";
+import { api, type Asset, type Loan, type Household, type Member } from "@/lib/api";
 import { useAuth } from "@/lib/useAuth";
 import { inr, assetClassLabel } from "@/lib/format";
 import { Shell } from "@/components/Shell";
 import { AssetSheet } from "@/components/AssetSheet";
 import { LoanSheet } from "@/components/LoanSheet";
+import { MemberSheet } from "@/components/MemberSheet";
 
 export default function Assets() {
   const { user, ready } = useAuth();
@@ -15,16 +16,18 @@ export default function Assets() {
   const [household, setHousehold] = useState<Household | null>(null);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loans, setLoans] = useState<Loan[]>([]);
+  const [members, setMembers] = useState<Member[]>([]);
   const [err, setErr] = useState<string | null>(null);
 
   const [assetSheet, setAssetSheet] = useState<{ open: boolean; edit?: Asset | null }>({ open: false });
   const [loanSheet, setLoanSheet] = useState<{ open: boolean; edit?: Loan | null }>({ open: false });
+  const [memberSheet, setMemberSheet] = useState<{ open: boolean; edit?: Member | null }>({ open: false });
 
   const load = useCallback(async (id: string, owner: boolean) => {
     setErr(null);
     try {
-      const [hh, a] = await Promise.all([api.getHousehold(id), api.listAssets(id)]);
-      setHousehold(hh); setAssets(a);
+      const [hh, a, m] = await Promise.all([api.getHousehold(id), api.listAssets(id), api.listMembers(id)]);
+      setHousehold(hh); setAssets(a); setMembers(m);
       // Loans are owner-only (the API forbids them for operations).
       setLoans(owner ? await api.listLoans(id) : []);
     } catch (e: any) {
@@ -52,6 +55,11 @@ export default function Assets() {
   const totalEmi = loans.reduce((s, l) => s + l.emiMonthly, 0);
   const income = household?.monthlyTakeHome ?? null;
   const assetName = (id: string | null) => assets.find((a) => a.id === id)?.name;
+  const memberName = (id: string | null) => members.find((m) => m.id === id)?.name;
+  async function removeMember(m: Member) {
+    if (!confirm(`Remove ${m.name}? Their assets and loans become household/joint.`)) return;
+    await api.deleteMember(m.id); refresh();
+  }
 
   // Top-level assets vs nested components (parent_asset_id).
   const topLevel = assets.filter((a) => !a.parentAssetId);
@@ -76,7 +84,7 @@ export default function Assets() {
         <td style={{ paddingLeft: nested ? 26 : 8 }}>
           {nested && <span className="muted">↳ </span>}
           <span style={{ fontWeight: 500 }}>{a.name}</span>
-          <div style={{ fontSize: 11, color: "var(--muted)" }}>{assetClassLabel(a.assetClass)}{a.liquid ? " · liquid" : ""}{a.realEstate?.address ? ` · ${a.realEstate.address}` : ""}</div>
+          <div style={{ fontSize: 11, color: "var(--muted)" }}>{assetClassLabel(a.assetClass)}{a.liquid ? " · liquid" : ""}{a.memberId ? ` · ${memberName(a.memberId) ?? "member"}` : ""}{a.realEstate?.address ? ` · ${a.realEstate.address}` : ""}</div>
         </td>
         <td className="tnum">{inr(a.value)}</td>
         {isOwner && <td className="tnum" style={{ color: loan > 0 ? "var(--bad)" : "var(--muted)" }}>{loan > 0 ? inr(loan) : "—"}</td>}
@@ -129,6 +137,31 @@ export default function Assets() {
 
       {isOwner && (
         <>
+          {/* Family members */}
+          <div className="sec-label">Family members<button className="btn small primary" onClick={() => setMemberSheet({ open: true, edit: null })}>+ Add member</button></div>
+          {members.length === 0 && <div className="empty">Add earners to aggregate the household income and see each person's own net worth.</div>}
+          {members.map((m) => (
+            <div className="row-item" key={m.id}>
+              <div className="h">
+                <span className="t">{m.name}</span>
+                <span className="tnum">{m.monthlyIncome != null ? `${inr(m.monthlyIncome)}/mo` : "no income set"}</span>
+              </div>
+              <div className="meta">
+                {assets.filter((a) => a.memberId === m.id).length} asset(s)
+                {m.monthlyEssential != null ? ` · essentials ${inr(m.monthlyEssential)}/mo` : ""}
+              </div>
+              <div className="acts">
+                <button className="btn ghost small" onClick={() => setMemberSheet({ open: true, edit: m })}>Edit</button>
+                <button className="btn ghost small danger" onClick={() => removeMember(m)}>Remove</button>
+              </div>
+            </div>
+          ))}
+          {members.some((m) => m.monthlyIncome != null) && (
+            <div className="hint" style={{ margin: "2px 4px 0" }}>
+              Household take-home = {inr(members.reduce((s, m) => s + (m.monthlyIncome ?? 0), 0))}/mo (sum of members).
+            </div>
+          )}
+
           {/* Loans */}
           <div className="sec-label">Loans<button className="btn small primary" onClick={() => setLoanSheet({ open: true, edit: null })}>+ Add loan</button></div>
           {loans.length === 0 && <div className="empty">No loans — or add one to see your leverage.</div>}
@@ -161,10 +194,13 @@ export default function Assets() {
       </div>
 
       {assetSheet.open && hhId && (
-        <AssetSheet householdId={hhId} existing={assetSheet.edit} onClose={() => setAssetSheet({ open: false })} onSaved={() => { setAssetSheet({ open: false }); refresh(); }} onChanged={refresh} />
+        <AssetSheet householdId={hhId} existing={assetSheet.edit} members={members} onClose={() => setAssetSheet({ open: false })} onSaved={() => { setAssetSheet({ open: false }); refresh(); }} onChanged={refresh} />
       )}
       {loanSheet.open && hhId && (
-        <LoanSheet householdId={hhId} existing={loanSheet.edit} assets={assets} onClose={() => setLoanSheet({ open: false })} onSaved={() => { setLoanSheet({ open: false }); refresh(); }} />
+        <LoanSheet householdId={hhId} existing={loanSheet.edit} assets={assets} members={members} onClose={() => setLoanSheet({ open: false })} onSaved={() => { setLoanSheet({ open: false }); refresh(); }} />
+      )}
+      {memberSheet.open && hhId && (
+        <MemberSheet householdId={hhId} existing={memberSheet.edit} onClose={() => setMemberSheet({ open: false })} onSaved={() => { setMemberSheet({ open: false }); refresh(); }} />
       )}
     </Shell>
   );

@@ -96,6 +96,60 @@ export async function deleteHousehold(id: string) {
   if (rowCount === 0) throw new HttpError(404, 'household_not_found');
 }
 
+// ---- members (family members with their own income) -----------------------
+
+const memberRow = (r: any) => ({
+  id: r.id,
+  householdId: r.household_id,
+  name: r.name,
+  monthlyIncome: r.monthly_income_paise != null ? paiseToRupees(r.monthly_income_paise) : null,
+  monthlyEssential: r.monthly_essential_paise != null ? paiseToRupees(r.monthly_essential_paise) : null,
+  createdAt: r.created_at,
+});
+
+export async function listMembers(householdId: string) {
+  await getHousehold(householdId);
+  const { rows } = await db().query(`SELECT * FROM members WHERE household_id = $1 ORDER BY created_at`, [householdId]);
+  return rows.map(memberRow);
+}
+
+export async function createMember(householdId: string, body: any) {
+  await getHousehold(householdId);
+  const income = money(body.monthlyIncome, 'monthlyIncome');
+  const essential = money(body.monthlyEssential, 'monthlyEssential');
+  const { rows } = await db().query(
+    `INSERT INTO members (household_id, name, monthly_income_paise, monthly_essential_paise)
+     VALUES ($1,$2,$3,$4) RETURNING *`,
+    [householdId, str(body.name, 'name', { required: true }),
+     income != null ? rupeesToPaise(income) : null,
+     essential != null ? rupeesToPaise(essential) : null]
+  );
+  return memberRow(rows[0]);
+}
+
+export async function updateMember(id: string, body: any) {
+  const sets: string[] = [];
+  const vals: any[] = [];
+  const push = (c: string, v: any) => { vals.push(v); sets.push(`${c} = $${vals.length}`); };
+  if ('name' in body) push('name', str(body.name, 'name', { required: true }));
+  if ('monthlyIncome' in body) { const v = money(body.monthlyIncome, 'monthlyIncome'); push('monthly_income_paise', v != null ? rupeesToPaise(v) : null); }
+  if ('monthlyEssential' in body) { const v = money(body.monthlyEssential, 'monthlyEssential'); push('monthly_essential_paise', v != null ? rupeesToPaise(v) : null); }
+  if (sets.length === 0) {
+    const { rows } = await db().query(`SELECT * FROM members WHERE id = $1`, [id]);
+    if (rows.length === 0) throw new HttpError(404, 'member_not_found');
+    return memberRow(rows[0]);
+  }
+  vals.push(id);
+  const { rows } = await db().query(`UPDATE members SET ${sets.join(', ')} WHERE id = $${vals.length} RETURNING *`, vals);
+  if (rows.length === 0) throw new HttpError(404, 'member_not_found');
+  return memberRow(rows[0]);
+}
+
+export async function deleteMember(id: string) {
+  const { rowCount } = await db().query(`DELETE FROM members WHERE id = $1`, [id]);
+  if (rowCount === 0) throw new HttpError(404, 'member_not_found');
+}
+
 // ---- assets (with optional real-estate profile) ---------------------------
 
 const assetRow = (r: any) => ({
@@ -106,6 +160,7 @@ const assetRow = (r: any) => ({
   value: paiseToRupees(r.current_value_paise),
   liquid: r.liquid,
   parentAssetId: r.parent_asset_id ?? null,
+  memberId: r.member_id ?? null,
   costBasis: r.cost_basis_paise != null ? paiseToRupees(r.cost_basis_paise) : null,
   monthlyContribution: r.monthly_contribution_paise != null ? paiseToRupees(r.monthly_contribution_paise) : null,
   realEstate: r.address != null || r.ptin != null || r.sqft != null
@@ -162,11 +217,12 @@ export async function createAsset(householdId: string, body: any) {
   try {
     await client.query('BEGIN');
     const { rows } = await client.query(
-      `INSERT INTO assets (household_id, name, asset_class, current_value_paise, liquid, cost_basis_paise, monthly_contribution_paise)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+      `INSERT INTO assets (household_id, name, asset_class, current_value_paise, liquid, cost_basis_paise, monthly_contribution_paise, member_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
       [householdId, name, cls, rupeesToPaise(value), liquid,
        costBasis != null ? rupeesToPaise(costBasis) : null,
-       monthly != null ? rupeesToPaise(monthly) : null]
+       monthly != null ? rupeesToPaise(monthly) : null,
+       str(body.memberId, 'memberId') ?? null]
     );
     const id = rows[0].id;
     if (cls === 'real_estate' && body.realEstate) await upsertRealEstate(client, id, body.realEstate);
@@ -192,6 +248,7 @@ export async function updateAsset(id: string, body: any) {
   if ('liquid' in body) push('liquid', Boolean(body.liquid));
   if ('costBasis' in body) { const m = money(body.costBasis, 'costBasis'); push('cost_basis_paise', m != null ? rupeesToPaise(m) : null); }
   if ('monthlyContribution' in body) { const m = money(body.monthlyContribution, 'monthlyContribution'); push('monthly_contribution_paise', m != null ? rupeesToPaise(m) : null); }
+  if ('memberId' in body) push('member_id', str(body.memberId, 'memberId') ?? null);
 
   const client = await db().connect();
   try {
@@ -383,6 +440,7 @@ const loanRow = (r: any) => ({
   emiMonthly: paiseToRupees(r.emi_monthly_paise),
   ratePct: r.rate_pct != null ? Number(r.rate_pct) : null,
   securedAssetId: r.secured_asset_id ?? null,
+  memberId: r.member_id ?? null,
 });
 
 export async function listLoans(householdId: string) {
@@ -405,9 +463,10 @@ export async function createLoan(householdId: string, body: any) {
   const outstanding = money(body.outstanding, 'outstanding', { required: true })!;
   const emi = money(body.emiMonthly, 'emiMonthly', { required: true })!;
   const { rows } = await db().query(
-    `INSERT INTO loans (household_id, name, outstanding_paise, emi_monthly_paise, rate_pct, secured_asset_id)
-     VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-    [householdId, name, rupeesToPaise(outstanding), rupeesToPaise(emi), ratePct(body.ratePct), str(body.securedAssetId, 'securedAssetId') ?? null]
+    `INSERT INTO loans (household_id, name, outstanding_paise, emi_monthly_paise, rate_pct, secured_asset_id, member_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+    [householdId, name, rupeesToPaise(outstanding), rupeesToPaise(emi), ratePct(body.ratePct),
+     str(body.securedAssetId, 'securedAssetId') ?? null, str(body.memberId, 'memberId') ?? null]
   );
   return loanRow(rows[0]);
 }
@@ -422,6 +481,7 @@ export async function updateLoan(id: string, body: any) {
   if ('emiMonthly' in body) push('emi_monthly_paise', rupeesToPaise(money(body.emiMonthly, 'emiMonthly', { required: true })!));
   if ('ratePct' in body) push('rate_pct', ratePct(body.ratePct));
   if ('securedAssetId' in body) push('secured_asset_id', str(body.securedAssetId, 'securedAssetId') ?? null);
+  if ('memberId' in body) push('member_id', str(body.memberId, 'memberId') ?? null);
   if (sets.length === 0) {
     const { rows } = await db().query(`SELECT * FROM loans WHERE id = $1`, [id]);
     if (rows.length === 0) throw new HttpError(404, 'loan_not_found');

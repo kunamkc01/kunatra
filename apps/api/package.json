@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node --experimental-strip-types --watch src/index.ts",
     "start": "node --experimental-strip-types src/index.ts",
-    "test": "node --env-file=.env --experimental-strip-types --test src/api.test.ts src/ops.test.ts src/auth.test.ts src/investments.test.ts"
+    "test": "node --env-file=.env --experimental-strip-types --test src/api.test.ts src/ops.test.ts src/auth.test.ts src/investments.test.ts src/members.test.ts"
   },
   "dependencies": {
     "@atlas/engine": "*",

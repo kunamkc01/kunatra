@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { api, type Asset, type AssetClass, type Valuation, type Contribution } from "@/lib/api";
+import { api, type Asset, type AssetClass, type Valuation, type Contribution, type Member } from "@/lib/api";
 import { inr } from "@/lib/format";
 import { Sheet } from "./Sheet";
 
@@ -25,16 +25,18 @@ const CLASSES: { value: AssetClass; label: string; liquidDefault: boolean }[] = 
 const RECURRING = new Set<AssetClass>(["sip", "mutual_fund", "rd", "ppf", "epf", "nps"]);
 
 export function AssetSheet({
-  householdId, existing, onClose, onSaved, onChanged,
+  householdId, existing, members, onClose, onSaved, onChanged,
 }: {
   householdId: string;
   existing?: Asset | null;
+  members?: Member[];
   onClose: () => void;
   onSaved: () => void;
   onChanged?: () => void;
 }) {
   const [name, setName] = useState(existing?.name ?? "");
   const [assetClass, setAssetClass] = useState<AssetClass>(existing?.assetClass ?? "cash");
+  const [memberId, setMemberId] = useState(existing?.memberId ?? "");
   const [value, setValue] = useState(existing ? String(existing.value) : "");
   const [liquid, setLiquid] = useState<boolean>(
     existing?.liquid ?? CLASSES.find((c) => c.value === "cash")!.liquidDefault
@@ -133,6 +135,7 @@ export function AssetSheet({
       assetClass,
       value: Number(value),
       liquid,
+      memberId: memberId || null,
       costBasis: costBasis ? Number(costBasis) : null,
       monthlyContribution: monthlyContribution ? Number(monthlyContribution) : null,
       ...(assetClass === "real_estate"
@@ -181,6 +184,16 @@ export function AssetSheet({
             Reachable in a hurry (counts toward emergency runway)
           </label>
         </div>
+
+        {members && members.length > 0 && (
+          <div className="field">
+            <label>Belongs to</label>
+            <select value={memberId} onChange={(e) => setMemberId(e.target.value)}>
+              <option value="">Household / joint</option>
+              {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+          </div>
+        )}
 
         {assetClass === "real_estate" && (
           <>

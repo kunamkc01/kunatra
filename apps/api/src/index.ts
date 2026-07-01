@@ -1,7 +1,7 @@
 import { pathToFileURL } from 'node:url';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import { assess, salariedSample } from '@atlas/engine';
-import { loadPosition } from './db.ts';
+import { loadPosition, memberAssessments } from './db.ts';
 import { HttpError } from './pool.ts';
 import * as repo from './repo.ts';
 import * as ops from './ops.ts';
@@ -103,6 +103,19 @@ app.get('/api/households/:id/inspections', sameHousehold, h(async (req, res) => 
 app.post('/api/households/:id/inspections', sameHousehold, h(async (req, res) => res.status(201).json(await ops.createInspection(req.params.id, req.body))));
 app.delete('/api/inspections/:id', scopeResource('inspections'), h(async (req, res) => { await ops.deleteInspection(req.params.id); res.sendStatus(204); }));
 app.get('/api/households/:id/operations/summary', sameHousehold, h(async (req, res) => res.json(await ops.operationsSummary(req.params.id))));
+
+// ---- family members ------------------------------------------------------
+// Operations can see member names (to attribute assets) but not their incomes.
+app.get('/api/households/:id/members', sameHousehold, h(async (req, res) => {
+  const list = await repo.listMembers(req.params.id);
+  if (req.user!.role !== 'owner') list.forEach((m: any) => { m.monthlyIncome = null; m.monthlyEssential = null; });
+  res.json(list);
+}));
+app.post('/api/households/:id/members', sameHousehold, ownerOnly, h(async (req, res) => res.status(201).json(await repo.createMember(req.params.id, req.body))));
+app.patch('/api/members/:id', scopeResource('members'), ownerOnly, h(async (req, res) => res.json(await repo.updateMember(req.params.id, req.body))));
+app.delete('/api/members/:id', scopeResource('members'), ownerOnly, h(async (req, res) => { await repo.deleteMember(req.params.id); res.sendStatus(204); }));
+// Per-member net worth & exposure (owner only — financial).
+app.get('/api/households/:id/members/assessment', sameHousehold, ownerOnly, h(async (req, res) => res.json(await memberAssessments(req.params.id, new Date()))));
 
 // ---- team / users (owner only) -------------------------------------------
 app.get('/api/households/:id/users', sameHousehold, ownerOnly, h(async (req, res) => res.json(await auth.listUsers(req.params.id))));

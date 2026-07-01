@@ -32,6 +32,23 @@ export interface RealEstate {
   carParkSize?: string | null;
 }
 
+export interface Member {
+  id: string;
+  householdId: string;
+  name: string;
+  monthlyIncome: number | null;
+  monthlyEssential: number | null;
+  createdAt?: string;
+}
+
+export interface MemberAssessment {
+  id: string;
+  name: string;
+  monthlyIncome: number | null;
+  monthlyEssential: number | null;
+  assessment: Assessment;
+}
+
 export interface Asset {
   id: string;
   householdId: string;
@@ -40,6 +57,7 @@ export interface Asset {
   value: number;
   liquid: boolean;
   parentAssetId: string | null;
+  memberId: string | null;
   costBasis: number | null;
   monthlyContribution: number | null;
   realEstate: RealEstate | null;
@@ -53,6 +71,7 @@ export interface Loan {
   emiMonthly: number;
   ratePct: number | null;
   securedAssetId: string | null;
+  memberId: string | null;
 }
 
 export interface Household {
@@ -177,6 +196,15 @@ export const api = {
   createUser: (id: string, b: { email: string; password: string; fullName?: string; role: Role }) =>
     req<User>(`/api/households/${id}/users`, { method: "POST", body: JSON.stringify(b) }),
   deleteUser: (userId: string) => req<void>(`/api/users/${userId}`, { method: "DELETE" }),
+
+  // family members
+  listMembers: (id: string) => req<Member[]>(`/api/households/${id}/members`),
+  createMember: (id: string, b: { name: string; monthlyIncome?: number; monthlyEssential?: number }) =>
+    req<Member>(`/api/households/${id}/members`, { method: "POST", body: JSON.stringify(b) }),
+  updateMember: (memberId: string, b: Partial<{ name: string; monthlyIncome: number | null; monthlyEssential: number | null }>) =>
+    req<Member>(`/api/members/${memberId}`, { method: "PATCH", body: JSON.stringify(b) }),
+  deleteMember: (memberId: string) => req<void>(`/api/members/${memberId}`, { method: "DELETE" }),
+  memberAssessments: (id: string) => req<MemberAssessment[]>(`/api/households/${id}/members/assessment`),
 
   // households
   getHousehold: (id: string) => req<Household>(`/api/households/${id}`),

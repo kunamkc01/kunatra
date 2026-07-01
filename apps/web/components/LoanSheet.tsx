@@ -1,14 +1,15 @@
 "use client";
 import { useState } from "react";
-import { api, type Asset, type Loan } from "@/lib/api";
+import { api, type Asset, type Loan, type Member } from "@/lib/api";
 import { Sheet } from "./Sheet";
 
 export function LoanSheet({
-  householdId, existing, assets, onClose, onSaved,
+  householdId, existing, assets, members, onClose, onSaved,
 }: {
   householdId: string;
   existing?: Loan | null;
   assets: Asset[];
+  members?: Member[];
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -17,6 +18,7 @@ export function LoanSheet({
   const [emiMonthly, setEmi] = useState(existing ? String(existing.emiMonthly) : "");
   const [ratePct, setRate] = useState(existing?.ratePct != null ? String(existing.ratePct) : "");
   const [securedAssetId, setSecured] = useState(existing?.securedAssetId ?? "");
+  const [memberId, setMemberId] = useState(existing?.memberId ?? "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -35,6 +37,7 @@ export function LoanSheet({
       emiMonthly: Number(emiMonthly),
       ratePct: ratePct ? Number(ratePct) : null,
       securedAssetId: securedAssetId || null,
+      memberId: memberId || null,
     };
     try {
       if (existing) await api.updateLoan(existing.id, body);
@@ -79,6 +82,15 @@ export function LoanSheet({
             <div className="hint">Links the loan to an asset for LTV</div>
           </div>
         </div>
+        {members && members.length > 0 && (
+          <div className="field">
+            <label>Whose loan</label>
+            <select value={memberId} onChange={(e) => setMemberId(e.target.value)}>
+              <option value="">Household / joint</option>
+              {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+          </div>
+        )}
         {err && <div className="err">{err}</div>}
         <div className="actions">
           <button className="btn primary" type="submit" disabled={busy}>{busy ? "Saving…" : "Save"}</button>

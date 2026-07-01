@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import type { Assessment, Signal } from "@atlas/engine";
-import { api, type Household, type Asset, type Loan, type OperationsSummary } from "@/lib/api";
+import { api, type Household, type Asset, type Loan, type OperationsSummary, type MemberAssessment } from "@/lib/api";
 import { useAuth } from "@/lib/useAuth";
 import { inr, assetClassLabel } from "@/lib/format";
 import { Shell } from "@/components/Shell";
@@ -18,15 +18,16 @@ export default function Portfolio() {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loans, setLoans] = useState<Loan[]>([]);
   const [ops, setOps] = useState<OperationsSummary | null>(null);
+  const [memberViews, setMemberViews] = useState<MemberAssessment[]>([]);
   const [err, setErr] = useState<string | null>(null);
 
   const load = useCallback(async (id: string) => {
     setErr(null);
     try {
-      const [hh, a, list, ln, o] = await Promise.all([
-        api.getHousehold(id), api.assessment(id), api.listAssets(id), api.listLoans(id), api.operationsSummary(id),
+      const [hh, a, list, ln, o, mv] = await Promise.all([
+        api.getHousehold(id), api.assessment(id), api.listAssets(id), api.listLoans(id), api.operationsSummary(id), api.memberAssessments(id),
       ]);
-      setHousehold(hh); setAssessment(a); setAssets(list); setLoans(ln); setOps(o);
+      setHousehold(hh); setAssessment(a); setAssets(list); setLoans(ln); setOps(o); setMemberViews(mv);
     } catch (e: any) {
       setErr(e.message ?? "Could not load your data");
     }
@@ -44,13 +45,18 @@ export default function Portfolio() {
   const signals = assessment?.signals ?? [];
   const hasData = nw && (nw.grossAssets > 0 || nw.totalDebt > 0);
   const byKey = (k: string) => signals.find((s) => s.key === k);
-  const warnings = signals.filter((s) => s.severity === "warning").length;
-  const watches = signals.filter((s) => s.severity === "watch").length;
-  const status = warnings > 0
-    ? { text: `${warnings} need${warnings === 1 ? "s" : ""} attention`, color: "var(--bad)" }
-    : watches > 0
-      ? { text: `${watches} to watch`, color: "var(--warn)" }
-      : { text: "Looking healthy", color: "var(--good)" };
+  // Areas that aren't in the clear, worst first — named so the status says *what* to look at.
+  const flagged = signals
+    .filter((s) => s.severity !== "good")
+    .sort((a, b) => (a.severity === "warning" ? 0 : 1) - (b.severity === "warning" ? 0 : 1));
+  const hasWarning = flagged.some((s) => s.severity === "warning");
+  const status = flagged.length === 0
+    ? { phrase: "Looking steady", color: "var(--good)" }
+    : hasWarning
+      ? { phrase: `${flagged.length} to review`, color: "var(--bad)" }
+      : { phrase: `${flagged.length} to keep an eye on`, color: "var(--warn)" };
+  const flaggedNames = flagged.slice(0, 3).map((s) => s.label.toLowerCase()).join(", ")
+    + (flagged.length > 3 ? `, +${flagged.length - 3} more` : "");
 
   // The headline descriptive signal (most severe) — the overextension "mirror".
   const lead: Signal | undefined =
@@ -66,9 +72,12 @@ export default function Portfolio() {
           <div className="big num">{nw ? inr(nw.netWorth) : "₹—"}</div>
         </div>
         {hasData && (
-          <div style={{ textAlign: "right" }}>
+          <div style={{ textAlign: "right", maxWidth: 260 }}>
             <div className="label">Where you stand</div>
-            <div style={{ fontSize: 13.5, color: status.color, marginTop: 4, fontWeight: 500 }}>{status.text}</div>
+            <div style={{ fontSize: 13.5, color: status.color, marginTop: 4, fontWeight: 500 }}>{status.phrase}</div>
+            {flagged.length > 0 && (
+              <div className="muted" style={{ fontSize: 11.5, marginTop: 2, lineHeight: 1.4 }}>{flaggedNames}</div>
+            )}
           </div>
         )}
       </div>
@@ -134,6 +143,27 @@ export default function Portfolio() {
                     <div className="tv num" style={{ fontSize: 21, marginTop: 4 }}>{inv.xirrPct >= 0 ? "+" : ""}{inv.xirrPct.toFixed(1)}%<span style={{ fontSize: 12, color: "var(--muted)" }}>/yr</span></div>
                   </div>
                 )}
+              </div>
+            </>
+          )}
+
+          {memberViews.length > 0 && (
+            <>
+              <div className="label" style={{ margin: "18px 0 8px" }}>By member</div>
+              <div className="tiles">
+                {memberViews.map((m) => {
+                  const emi = m.assessment.exposure.emiToIncome;
+                  return (
+                    <div className="tile" key={m.id}>
+                      <div className="tl" style={{ fontWeight: 500, color: "var(--ink)" }}>{m.name}</div>
+                      <div className="tv num" style={{ fontSize: 19, marginTop: 6 }}>{inr(m.assessment.netWorth.netWorth)}</div>
+                      <div className="tl" style={{ marginTop: 4 }}>
+                        {m.monthlyIncome != null ? `${inr(m.monthlyIncome)}/mo income` : "no income set"}
+                        {emi != null ? ` · EMI ${emi.toFixed(0)}%` : ""}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </>
           )}
