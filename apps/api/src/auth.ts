@@ -7,7 +7,8 @@ import { db, HttpError } from './pool.ts';
 const SECRET = process.env.AUTH_SECRET ?? 'dev-insecure-secret-change-me';
 const TOKEN_TTL_SEC = 60 * 60 * 24 * 7; // 7 days
 
-export type Role = 'owner' | 'operations';
+export type Role = 'owner' | 'operations' | 'advisor';
+const ROLES: Role[] = ['owner', 'operations', 'advisor'];
 export interface AuthUser { id: string; householdId: string; role: Role; email: string; }
 
 // Augment Express Request with the authenticated user.
@@ -146,7 +147,7 @@ export async function listUsers(householdId: string) {
 export async function createUser(householdId: string, body: any) {
   const email = normEmail(body.email);
   const passwordHash = hashPassword(body.password);
-  const role: Role = body.role === 'owner' ? 'owner' : 'operations';
+  const role: Role = ROLES.includes(body.role) ? body.role : 'operations';
   const fullName = typeof body.fullName === 'string' ? body.fullName.trim() : null;
   try {
     const { rows } = await db().query(

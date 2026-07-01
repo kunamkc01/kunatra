@@ -7,6 +7,7 @@ import * as repo from './repo.ts';
 import * as ops from './ops.ts';
 import * as auth from './auth.ts';
 import * as compliance from './compliance.ts';
+import * as approvals from './approvals.ts';
 import { auditMiddleware, listAudit } from './audit.ts';
 
 export const app = express();
@@ -44,6 +45,15 @@ app.use((req, res, next) => {
 
 const { requireRole, sameHousehold, scopeResource, scopeVia } = auth;
 const ownerOnly = requireRole('owner');
+const financialView = requireRole('owner', 'advisor'); // read-only advisors see the money view
+
+// Advisors are strictly read-only.
+app.use((req, res, next) => {
+  if (req.user?.role === 'advisor' && ['POST', 'PATCH', 'DELETE'].includes(req.method) && req.path.startsWith('/api/')) {
+    return next(new HttpError(403, 'read_only', 'Advisors have read-only access'));
+  }
+  next();
+});
 
 // Record who changed what (runs after authentication, before the handlers).
 app.use(auditMiddleware);
@@ -54,15 +64,15 @@ app.get('/api/auth/me', h(async (req, res) => res.json(await auth.getUserById(re
 // ---- households ----------------------------------------------------------
 app.get('/api/households/:id', sameHousehold, h(async (req, res) => {
   const hh = await repo.getHousehold(req.params.id);
-  // Financial totals are hidden from operations users.
-  if (req.user!.role !== 'owner') { hh.monthlyTakeHome = null; hh.monthlyEssential = null; }
+  // Financial totals are hidden from operations users (owners and advisors see them).
+  if (req.user!.role === 'operations') { hh.monthlyTakeHome = null; hh.monthlyEssential = null; }
   res.json(hh);
 }));
 app.patch('/api/households/:id', sameHousehold, ownerOnly, h(async (req, res) => res.json(await repo.updateHousehold(req.params.id, req.body))));
 app.delete('/api/households/:id', sameHousehold, ownerOnly, h(async (req, res) => { await repo.deleteHousehold(req.params.id); res.sendStatus(204); }));
 
 // ---- assessment (owner only — the net-worth/exposure picture) ------------
-app.get('/api/households/:id/assessment', sameHousehold, ownerOnly, h(async (req, res) => {
+app.get('/api/households/:id/assessment', sameHousehold, financialView, h(async (req, res) => {
   res.json(assess(await loadPosition(req.params.id), new Date()));
 }));
 
@@ -85,7 +95,7 @@ app.post('/api/assets/:id/contributions/schedule', scopeResource('assets'), h(as
 app.delete('/api/contributions/:id', scopeVia('SELECT a.household_id FROM contributions c JOIN assets a ON a.id = c.asset_id WHERE c.id = $1'), h(async (req, res) => { await repo.deleteContribution(req.params.id); res.sendStatus(204); }));
 
 // ---- loans (owner only — debt is an owner decision) ----------------------
-app.get('/api/households/:id/loans', sameHousehold, ownerOnly, h(async (req, res) => res.json(await repo.listLoans(req.params.id))));
+app.get('/api/households/:id/loans', sameHousehold, financialView, h(async (req, res) => res.json(await repo.listLoans(req.params.id))));
 app.post('/api/households/:id/loans', sameHousehold, ownerOnly, h(async (req, res) => res.status(201).json(await repo.createLoan(req.params.id, req.body))));
 app.patch('/api/loans/:id', scopeResource('loans'), ownerOnly, h(async (req, res) => res.json(await repo.updateLoan(req.params.id, req.body))));
 app.delete('/api/loans/:id', scopeResource('loans'), ownerOnly, h(async (req, res) => { await repo.deleteLoan(req.params.id); res.sendStatus(204); }));
@@ -113,14 +123,14 @@ app.get('/api/households/:id/operations/summary', sameHousehold, h(async (req, r
 // Operations can see member names (to attribute assets) but not their incomes.
 app.get('/api/households/:id/members', sameHousehold, h(async (req, res) => {
   const list = await repo.listMembers(req.params.id);
-  if (req.user!.role !== 'owner') list.forEach((m: any) => { m.monthlyIncome = null; m.monthlyEssential = null; });
+  if (req.user!.role === 'operations') list.forEach((m: any) => { m.monthlyIncome = null; m.monthlyEssential = null; });
   res.json(list);
 }));
 app.post('/api/households/:id/members', sameHousehold, ownerOnly, h(async (req, res) => res.status(201).json(await repo.createMember(req.params.id, req.body))));
 app.patch('/api/members/:id', scopeResource('members'), ownerOnly, h(async (req, res) => res.json(await repo.updateMember(req.params.id, req.body))));
 app.delete('/api/members/:id', scopeResource('members'), ownerOnly, h(async (req, res) => { await repo.deleteMember(req.params.id); res.sendStatus(204); }));
 // Per-member net worth & exposure (owner only — financial).
-app.get('/api/households/:id/members/assessment', sameHousehold, ownerOnly, h(async (req, res) => res.json(await memberAssessments(req.params.id, new Date()))));
+app.get('/api/households/:id/members/assessment', sameHousehold, financialView, h(async (req, res) => res.json(await memberAssessments(req.params.id, new Date()))));
 
 // ---- compliance calendar (owner + operations track/complete due dates) ---
 app.get('/api/households/:id/compliance', sameHousehold, h(async (req, res) => res.json(await compliance.listCompliance(req.params.id))));
@@ -129,6 +139,14 @@ app.post('/api/households/:id/compliance', sameHousehold, h(async (req, res) => 
 app.patch('/api/compliance/:id', scopeResource('compliance_items'), h(async (req, res) => res.json(await compliance.updateCompliance(req.params.id, req.body))));
 app.post('/api/compliance/:id/complete', scopeResource('compliance_items'), h(async (req, res) => res.json(await compliance.completeCompliance(req.params.id))));
 app.delete('/api/compliance/:id', scopeResource('compliance_items'), h(async (req, res) => { await compliance.deleteCompliance(req.params.id); res.sendStatus(204); }));
+
+// ---- approval workflow (operations propose → owner decides) ---------------
+const opsOrOwner = requireRole('owner', 'operations');
+app.get('/api/households/:id/approvals', sameHousehold, opsOrOwner, h(async (req, res) => res.json(await approvals.listApprovals(req.params.id, req.user!))));
+app.get('/api/households/:id/approvals/summary', sameHousehold, ownerOnly, h(async (req, res) => res.json(await approvals.approvalsSummary(req.params.id))));
+app.post('/api/households/:id/approvals', sameHousehold, opsOrOwner, h(async (req, res) => res.status(201).json(await approvals.createApproval(req.params.id, req.user!, req.body))));
+app.post('/api/approvals/:id/decide', scopeResource('approval_requests'), ownerOnly, h(async (req, res) => res.json(await approvals.decideApproval(req.params.id, req.user!, req.body))));
+app.delete('/api/approvals/:id', scopeResource('approval_requests'), ownerOnly, h(async (req, res) => { await approvals.deleteApproval(req.params.id); res.sendStatus(204); }));
 
 // ---- audit trail (owner only — oversight) --------------------------------
 app.get('/api/households/:id/audit', sameHousehold, ownerOnly, h(async (req, res) => res.json(await listAudit(req.params.id))));

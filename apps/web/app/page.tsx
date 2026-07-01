@@ -12,7 +12,8 @@ const tileClass = (sev?: string) => (sev === "good" ? "g" : sev === "watch" ? "w
 const stripClass = (sev?: string) => (sev === "good" ? "good" : sev === "watch" ? "warn" : "bad");
 
 export default function Portfolio() {
-  const { user, ready } = useAuth({ requireRole: "owner" });
+  const { user, ready } = useAuth({ requireRole: ["owner", "advisor"] });
+  const isOwner = user?.role === "owner";
   const [household, setHousehold] = useState<Household | null>(null);
   const [assessment, setAssessment] = useState<Assessment | null>(null);
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -20,22 +21,28 @@ export default function Portfolio() {
   const [ops, setOps] = useState<OperationsSummary | null>(null);
   const [memberViews, setMemberViews] = useState<MemberAssessment[]>([]);
   const [comp, setComp] = useState<ComplianceSummary | null>(null);
+  const [pendingApprovals, setPendingApprovals] = useState(0);
   const [err, setErr] = useState<string | null>(null);
 
-  const load = useCallback(async (id: string) => {
+  const load = useCallback(async (id: string, owner: boolean) => {
     setErr(null);
     try {
-      const [hh, a, list, ln, o, mv, c] = await Promise.all([
-        api.getHousehold(id), api.assessment(id), api.listAssets(id), api.listLoans(id), api.operationsSummary(id), api.memberAssessments(id), api.complianceSummary(id),
+      const [hh, a, list, ln, mv] = await Promise.all([
+        api.getHousehold(id), api.assessment(id), api.listAssets(id), api.listLoans(id), api.memberAssessments(id),
       ]);
-      setHousehold(hh); setAssessment(a); setAssets(list); setLoans(ln); setOps(o); setMemberViews(mv); setComp(c);
+      setHousehold(hh); setAssessment(a); setAssets(list); setLoans(ln); setMemberViews(mv);
+      // Operations / compliance / approvals are the owner's oversight view.
+      if (owner) {
+        const [o, c, ap] = await Promise.all([api.operationsSummary(id), api.complianceSummary(id), api.approvalsSummary(id)]);
+        setOps(o); setComp(c); setPendingApprovals(ap.pending);
+      }
     } catch (e: any) {
       setErr(e.message ?? "Could not load your data");
     }
   }, []);
 
   useEffect(() => {
-    if (ready && user) load(user.householdId);
+    if (ready && user) load(user.householdId, user.role === "owner");
   }, [ready, user, load]);
 
   if (!ready) return <Shell><div /></Shell>;
@@ -215,6 +222,13 @@ export default function Portfolio() {
             <div className="strip acc">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M14 6l4 4M3 21l4-1 11-11-3-3L4 17l-1 4z" /></svg>
               {ops.workOrders.active} open work order{ops.workOrders.active === 1 ? "" : "s"} · {inr(ops.maintenanceSpendYtd)} maintenance YTD — see <Link href="/operations" style={{ color: "var(--accent)", fontWeight: 600 }}>Operations</Link>.
+            </div>
+          )}
+
+          {isOwner && pendingApprovals > 0 && (
+            <div className="strip warn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
+              {pendingApprovals} request{pendingApprovals === 1 ? "" : "s"} awaiting your approval — see <Link href="/operations" style={{ color: "var(--accent)", fontWeight: 600 }}>Operations → Requests</Link>.
             </div>
           )}
 

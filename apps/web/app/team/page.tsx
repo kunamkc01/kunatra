@@ -98,10 +98,11 @@ function AddTeammate({ householdId, onClose, onSaved }: { householdId: string; o
             <div className="field">
               <label>Role</label>
               <select value={role} onChange={(e) => setRole(e.target.value as Role)}>
-                <option value="operations">Operations</option>
-                <option value="owner">Owner</option>
+                <option value="operations">Operations — upkeep only</option>
+                <option value="advisor">Advisor — read-only financials</option>
+                <option value="owner">Owner — full access</option>
               </select>
-              <div className="hint">Operations: upkeep only, no financials</div>
+              <div className="hint">Operations: upkeep, no financials · Advisor: sees the money, can't change it</div>
             </div>
           </div>
           {err && <div className="err">{err}</div>}

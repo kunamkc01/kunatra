@@ -39,7 +39,7 @@ function classify(req: Request, body: any): { action: string; entityType: string
   if (segs[0] === 'households' && segs.length === 2) { key = 'households'; entityId = segs[1]; }
   else if (segs.length >= 3) { key = segs[2]; entityId = req.method === 'POST' ? (body?.id ?? null) : segs[1]; }
   else if (segs.length === 2) { key = segs[0]; entityId = req.method === 'POST' ? (body?.id ?? null) : segs[1]; }
-  if (!key || key === 'complete' || key === 'schedule') return null; // skip sub-action POSTs
+  if (!key || key === 'complete' || key === 'schedule' || key === 'decide') return null; // skip sub-action POSTs
 
   const entityType = SINGULAR[key] ?? key;
   const label = body?.name ?? body?.title ?? body?.displayName ?? null;

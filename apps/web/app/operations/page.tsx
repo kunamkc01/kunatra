@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   api,
-  type Asset, type Vendor, type WorkOrder, type Inspection, type Household, type OperationsSummary, type WorkOrderStatus, type ComplianceItem,
+  type Asset, type Vendor, type WorkOrder, type Inspection, type Household, type OperationsSummary, type WorkOrderStatus, type ComplianceItem, type Approval,
 } from "@/lib/api";
 import { useAuth } from "@/lib/useAuth";
 import { inr } from "@/lib/format";
@@ -12,8 +12,10 @@ import { WorkOrderSheet } from "@/components/WorkOrderSheet";
 import { VendorSheet } from "@/components/VendorSheet";
 import { InspectionSheet } from "@/components/InspectionSheet";
 import { ComplianceSheet } from "@/components/ComplianceSheet";
+import { ApprovalSheet } from "@/components/ApprovalSheet";
 
-type Tab = "work" | "vendors" | "inspections" | "compliance";
+type Tab = "work" | "vendors" | "inspections" | "compliance" | "requests";
+const APPROVAL_PILL: Record<string, string> = { pending: "p-warn", approved: "p-good", rejected: "p-bad" };
 const KIND_LABEL: Record<string, string> = { property_tax: "Property tax", insurance: "Insurance", amc: "AMC", inspection: "Inspection", renewal: "Renewal", other: "Other" };
 function dueClass(dueOn: string): { pill: string; text: string } {
   const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -31,6 +33,7 @@ const RATING_TILE: Record<string, string> = { good: "g", fair: "w", poor: "b" };
 export default function Operations() {
   const { user, ready } = useAuth();
   const hhId = user?.householdId ?? null;
+  const isOwner = user?.role === "owner";
   const [household, setHousehold] = useState<Household | null>(null);
   const [tab, setTab] = useState<Tab>("work");
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -38,6 +41,7 @@ export default function Operations() {
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [inspections, setInspections] = useState<Inspection[]>([]);
   const [compliance, setCompliance] = useState<ComplianceItem[]>([]);
+  const [requests, setRequests] = useState<Approval[]>([]);
   const [summary, setSummary] = useState<OperationsSummary | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -45,14 +49,15 @@ export default function Operations() {
   const [vendorSheet, setVendorSheet] = useState<{ open: boolean; edit?: Vendor | null }>({ open: false });
   const [inspSheet, setInspSheet] = useState(false);
   const [compSheet, setCompSheet] = useState(false);
+  const [reqSheet, setReqSheet] = useState(false);
 
   const load = useCallback(async (id: string) => {
     setErr(null);
     try {
-      const [hh, a, v, w, i, s, c] = await Promise.all([
-        api.getHousehold(id), api.listAssets(id), api.listVendors(id), api.listWorkOrders(id), api.listInspections(id), api.operationsSummary(id), api.listCompliance(id),
+      const [hh, a, v, w, i, s, c, r] = await Promise.all([
+        api.getHousehold(id), api.listAssets(id), api.listVendors(id), api.listWorkOrders(id), api.listInspections(id), api.operationsSummary(id), api.listCompliance(id), api.listApprovals(id),
       ]);
-      setHousehold(hh); setAssets(a); setVendors(v); setWorkOrders(w); setInspections(i); setSummary(s); setCompliance(c);
+      setHousehold(hh); setAssets(a); setVendors(v); setWorkOrders(w); setInspections(i); setSummary(s); setCompliance(c); setRequests(r);
     } catch (e: any) {
       setErr(e.message ?? "Could not load");
     }
@@ -90,6 +95,13 @@ export default function Operations() {
     await api.completeCompliance(c.id); refresh();
   }
   async function removeCompliance(c: ComplianceItem) { if (confirm(`Delete "${c.title}"?`)) { await api.deleteCompliance(c.id); refresh(); } }
+  async function decide(r: Approval, decision: "approved" | "rejected") {
+    const note = window.prompt(`${decision === "approved" ? "Approve" : "Reject"} "${r.title}"? Add a note (optional):`, "");
+    if (note === null) return;
+    try { await api.decideApproval(r.id, { decision, note: note || undefined }); refresh(); }
+    catch (e: any) { alert(e.message ?? "Could not decide"); }
+  }
+  const pendingRequests = requests.filter((r) => r.status === "pending").length;
 
   if (!ready) return <Shell><div /></Shell>;
   if (!hhId) {
@@ -125,6 +137,7 @@ export default function Operations() {
         <button className={`subtab ${tab === "vendors" ? "active" : ""}`} onClick={() => setTab("vendors")}>Vendors</button>
         <button className={`subtab ${tab === "inspections" ? "active" : ""}`} onClick={() => setTab("inspections")}>Inspections</button>
         <button className={`subtab ${tab === "compliance" ? "active" : ""}`} onClick={() => setTab("compliance")}>Compliance</button>
+        <button className={`subtab ${tab === "requests" ? "active" : ""}`} onClick={() => setTab("requests")}>Requests{pendingRequests ? ` (${pendingRequests})` : ""}</button>
       </div>
 
       {tab === "work" && (
@@ -222,6 +235,35 @@ export default function Operations() {
         </>
       )}
 
+      {tab === "requests" && (
+        <>
+          <div className="sec-label">
+            {isOwner ? "Approval requests" : "My requests"}
+            <button className="btn small primary" onClick={() => setReqSheet(true)}>+ Raise a request</button>
+          </div>
+          {requests.length === 0 && <div className="empty">{isOwner ? "No requests. Operations teammates can raise spends/changes for you to approve." : "No requests yet. Propose a spend or change for the owner to approve."}</div>}
+          {requests.map((r) => (
+            <div className="row-item" key={r.id}>
+              <div className="h">
+                <span className="t">{r.title}{r.amount != null ? ` · ${inr(r.amount)}` : ""}</span>
+                <span className={`pill ${APPROVAL_PILL[r.status]}`}>{r.status}</span>
+              </div>
+              <div className="meta">
+                by {r.requestedBy ?? "—"}
+                {r.note ? ` · ${r.note}` : ""}
+                {r.status !== "pending" && r.decidedBy ? ` · ${r.status} by ${r.decidedBy}${r.decisionNote ? ` (“${r.decisionNote}”)` : ""}` : ""}
+              </div>
+              {isOwner && r.status === "pending" && (
+                <div className="acts">
+                  <button className="btn small primary" onClick={() => decide(r, "approved")}>Approve</button>
+                  <button className="btn small danger" onClick={() => decide(r, "rejected")}>Reject</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </>
+      )}
+
       {woSheet.open && hhId && (
         <WorkOrderSheet householdId={hhId} existing={woSheet.edit} assets={assets} vendors={vendors} onClose={() => setWoSheet({ open: false })} onSaved={() => { setWoSheet({ open: false }); refresh(); }} />
       )}
@@ -233,6 +275,9 @@ export default function Operations() {
       )}
       {compSheet && hhId && (
         <ComplianceSheet householdId={hhId} assets={assets} onClose={() => setCompSheet(false)} onSaved={() => { setCompSheet(false); refresh(); }} />
+      )}
+      {reqSheet && hhId && (
+        <ApprovalSheet householdId={hhId} onClose={() => setReqSheet(false)} onSaved={() => { setReqSheet(false); refresh(); }} />
       )}
     </Shell>
   );

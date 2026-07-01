@@ -169,7 +169,22 @@ export interface OperationsSummary {
   lastInspection: { rating: InspectionRating; on: string } | null;
 }
 
-export type Role = "owner" | "operations";
+export type Role = "owner" | "operations" | "advisor";
+
+export type ApprovalStatus = "pending" | "approved" | "rejected";
+export interface Approval {
+  id: string;
+  householdId: string;
+  requestedBy: string | null;
+  title: string;
+  amount: number | null;
+  note: string | null;
+  status: ApprovalStatus;
+  decidedBy: string | null;
+  decisionNote: string | null;
+  decidedAt: string | null;
+  createdAt: string;
+}
 
 export interface User {
   id: string;
@@ -312,6 +327,15 @@ export const api = {
 
   // audit trail (owner only)
   listAudit: (id: string) => req<AuditEntry[]>(`/api/households/${id}/audit`),
+
+  // approval workflow
+  listApprovals: (id: string) => req<Approval[]>(`/api/households/${id}/approvals`),
+  approvalsSummary: (id: string) => req<{ pending: number }>(`/api/households/${id}/approvals/summary`),
+  createApproval: (id: string, b: { title: string; amount?: number; note?: string }) =>
+    req<Approval>(`/api/households/${id}/approvals`, { method: "POST", body: JSON.stringify(b) }),
+  decideApproval: (approvalId: string, b: { decision: "approved" | "rejected"; note?: string }) =>
+    req<Approval>(`/api/approvals/${approvalId}/decide`, { method: "POST", body: JSON.stringify(b) }),
+  deleteApproval: (approvalId: string) => req<void>(`/api/approvals/${approvalId}`, { method: "DELETE" }),
 };
 
 // --- session, persisted in the browser ---

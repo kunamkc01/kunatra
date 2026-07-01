@@ -11,7 +11,10 @@ import { MemberSheet } from "@/components/MemberSheet";
 
 export default function Assets() {
   const { user, ready } = useAuth();
-  const isOwner = user?.role === "owner";
+  const role = user?.role;
+  const isOwner = role === "owner";
+  const canSeeFinancials = role !== "operations"; // owner + advisor
+  const canEditAssets = role === "owner" || role === "operations"; // not advisor (read-only)
   const hhId = user?.householdId ?? null;
   const [household, setHousehold] = useState<Household | null>(null);
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -23,23 +26,23 @@ export default function Assets() {
   const [loanSheet, setLoanSheet] = useState<{ open: boolean; edit?: Loan | null }>({ open: false });
   const [memberSheet, setMemberSheet] = useState<{ open: boolean; edit?: Member | null }>({ open: false });
 
-  const load = useCallback(async (id: string, owner: boolean) => {
+  const load = useCallback(async (id: string, financials: boolean) => {
     setErr(null);
     try {
       const [hh, a, m] = await Promise.all([api.getHousehold(id), api.listAssets(id), api.listMembers(id)]);
       setHousehold(hh); setAssets(a); setMembers(m);
-      // Loans are owner-only (the API forbids them for operations).
-      setLoans(owner ? await api.listLoans(id) : []);
+      // Loans are visible to owners + advisors (the API forbids them for operations).
+      setLoans(financials ? await api.listLoans(id) : []);
     } catch (e: any) {
       setErr(e.message ?? "Could not load");
     }
   }, []);
 
   useEffect(() => {
-    if (ready && user) load(user.householdId, user.role === "owner");
+    if (ready && user) load(user.householdId, user.role !== "operations");
   }, [ready, user, load]);
 
-  const refresh = () => { if (hhId) load(hhId, isOwner); };
+  const refresh = () => { if (hhId) load(hhId, canSeeFinancials); };
 
   async function removeAsset(a: Asset) {
     if (!confirm(`Delete "${a.name}"? Any loan secured against it becomes unsecured.`)) return;
@@ -74,7 +77,7 @@ export default function Assets() {
     );
   }
 
-  const cols = isOwner ? 6 : 3;
+  const cols = canSeeFinancials ? 6 : 3;
   const renderAssetRow = (a: Asset, nested = false) => {
     const loan = securedFor(a.id);
     const equity = a.value - loan;
@@ -87,16 +90,17 @@ export default function Assets() {
           <div style={{ fontSize: 11, color: "var(--muted)" }}>{assetClassLabel(a.assetClass)}{a.liquid ? " · liquid" : ""}{a.memberId ? ` · ${memberName(a.memberId) ?? "member"}` : ""}{a.realEstate?.address ? ` · ${a.realEstate.address}` : ""}</div>
         </td>
         <td className="tnum">{inr(a.value)}</td>
-        {isOwner && <td className="tnum" style={{ color: loan > 0 ? "var(--bad)" : "var(--muted)" }}>{loan > 0 ? inr(loan) : "—"}</td>}
-        {isOwner && <td className="tnum">{inr(equity)}</td>}
-        {isOwner && (
+        {canSeeFinancials && <td className="tnum" style={{ color: loan > 0 ? "var(--bad)" : "var(--muted)" }}>{loan > 0 ? inr(loan) : "—"}</td>}
+        {canSeeFinancials && <td className="tnum">{inr(equity)}</td>}
+        {canSeeFinancials && (
           <td className="tnum" style={{ color: ltv != null ? (ltv >= 80 ? "var(--bad)" : ltv >= 60 ? "var(--warn)" : "var(--ink)") : "var(--muted)" }}>
             {ltv != null ? `${ltv.toFixed(0)}%` : "owned"}
           </td>
         )}
         <td style={{ whiteSpace: "nowrap" }}>
-          <button className="btn ghost small" onClick={() => setAssetSheet({ open: true, edit: a })}>Edit</button>
+          {canEditAssets && <button className="btn ghost small" onClick={() => setAssetSheet({ open: true, edit: a })}>Edit</button>}
           {isOwner && <button className="btn ghost small danger" onClick={() => removeAsset(a)}>Delete</button>}
+          {!canEditAssets && <span className="muted" style={{ fontSize: 12 }}>view</span>}
         </td>
       </tr>
     );
@@ -109,12 +113,12 @@ export default function Assets() {
           <h2 className="scr-title">Asset register</h2>
           <div className="scr-sub">Properties at the top level · loans netted per asset</div>
         </div>
-        <button className="btn primary" onClick={() => setAssetSheet({ open: true, edit: null })}>+ Add asset</button>
+        {canEditAssets && <button className="btn primary" onClick={() => setAssetSheet({ open: true, edit: null })}>+ Add asset</button>}
       </div>
 
       {err && <div className="strip bad">{err}</div>}
 
-      {isOwner && (
+      {canSeeFinancials && (
         <>
           <div className="label" style={{ marginBottom: 8 }}>Debt service</div>
           <div className="tiles" style={{ marginBottom: 16 }}>
@@ -127,7 +131,7 @@ export default function Assets() {
 
       <div className="scroll">
         <table>
-          <thead><tr><th style={{ width: "34%" }}>Asset</th><th>Market value</th>{isOwner && <><th>Loan</th><th>Equity</th><th>LTV</th></>}<th></th></tr></thead>
+          <thead><tr><th style={{ width: "34%" }}>Asset</th><th>Market value</th>{canSeeFinancials && <><th>Loan</th><th>Equity</th><th>LTV</th></>}<th></th></tr></thead>
           <tbody>
             {topLevel.length === 0 && <tr><td colSpan={cols} className="empty">No assets yet — add your home, funds, savings…</td></tr>}
             {topLevel.flatMap((a) => [renderAssetRow(a), ...childrenOf(a.id).map((c) => renderAssetRow(c, true))])}
@@ -135,10 +139,10 @@ export default function Assets() {
         </table>
       </div>
 
-      {isOwner && (
+      {canSeeFinancials && (
         <>
           {/* Family members */}
-          <div className="sec-label">Family members<button className="btn small primary" onClick={() => setMemberSheet({ open: true, edit: null })}>+ Add member</button></div>
+          <div className="sec-label">Family members{isOwner && <button className="btn small primary" onClick={() => setMemberSheet({ open: true, edit: null })}>+ Add member</button>}</div>
           {members.length === 0 && <div className="empty">Add earners to aggregate the household income and see each person's own net worth.</div>}
           {members.map((m) => (
             <div className="row-item" key={m.id}>
@@ -150,10 +154,12 @@ export default function Assets() {
                 {assets.filter((a) => a.memberId === m.id).length} asset(s)
                 {m.monthlyEssential != null ? ` · essentials ${inr(m.monthlyEssential)}/mo` : ""}
               </div>
-              <div className="acts">
-                <button className="btn ghost small" onClick={() => setMemberSheet({ open: true, edit: m })}>Edit</button>
-                <button className="btn ghost small danger" onClick={() => removeMember(m)}>Remove</button>
-              </div>
+              {isOwner && (
+                <div className="acts">
+                  <button className="btn ghost small" onClick={() => setMemberSheet({ open: true, edit: m })}>Edit</button>
+                  <button className="btn ghost small danger" onClick={() => removeMember(m)}>Remove</button>
+                </div>
+              )}
             </div>
           ))}
           {members.some((m) => m.monthlyIncome != null) && (
@@ -163,7 +169,7 @@ export default function Assets() {
           )}
 
           {/* Loans */}
-          <div className="sec-label">Loans<button className="btn small primary" onClick={() => setLoanSheet({ open: true, edit: null })}>+ Add loan</button></div>
+          <div className="sec-label">Loans{isOwner && <button className="btn small primary" onClick={() => setLoanSheet({ open: true, edit: null })}>+ Add loan</button>}</div>
           {loans.length === 0 && <div className="empty">No loans — or add one to see your leverage.</div>}
           {loans.map((l) => (
             <div className="row-item" key={l.id}>
@@ -175,22 +181,26 @@ export default function Assets() {
                 EMI {inr(l.emiMonthly)}/mo{l.ratePct != null ? ` · ${l.ratePct}%` : ""}
                 {l.securedAssetId ? ` · against ${assetName(l.securedAssetId) ?? "an asset"}` : " · unsecured"}
               </div>
-              <div className="acts">
-                <button className="btn ghost small" onClick={() => setLoanSheet({ open: true, edit: l })}>Edit</button>
-                <button className="btn ghost small danger" onClick={() => removeLoan(l)}>Delete</button>
-              </div>
+              {isOwner && (
+                <div className="acts">
+                  <button className="btn ghost small" onClick={() => setLoanSheet({ open: true, edit: l })}>Edit</button>
+                  <button className="btn ghost small danger" onClick={() => removeLoan(l)}>Delete</button>
+                </div>
+              )}
             </div>
           ))}
 
           {/* Cash flow */}
-          <CashflowPanel household={household} onSaved={refresh} />
+          <CashflowPanel household={household} onSaved={refresh} readOnly={!isOwner} />
         </>
       )}
 
       <div className="explain">
         {isOwner
           ? "LTV is on current market value; equity is value minus the loan secured on that asset. Solar, lifts and UPS can be recorded as components of the property they serve — their cost rolls up to the parent."
-          : "You have operational access: keep the asset register and property details current. Financial totals, loans and cash flow are the owner's view."}
+          : role === "advisor"
+            ? "Advisor view — the full financial picture, read-only. You can see net worth, loans, LTV and returns, but changes stay with the owner."
+            : "You have operational access: keep the asset register and property details current. Financial totals, loans and cash flow are the owner's view."}
       </div>
 
       {assetSheet.open && hhId && (
@@ -206,7 +216,7 @@ export default function Assets() {
   );
 }
 
-function CashflowPanel({ household, onSaved }: { household: Household | null; onSaved: () => void }) {
+function CashflowPanel({ household, onSaved, readOnly = false }: { household: Household | null; onSaved: () => void; readOnly?: boolean }) {
   const [takeHome, setTakeHome] = useState("");
   const [essential, setEssential] = useState("");
   const [busy, setBusy] = useState(false);
@@ -236,13 +246,15 @@ function CashflowPanel({ household, onSaved }: { household: Household | null; on
       <h3>Monthly cash flow</h3>
       <p className="desc">Drives EMI-strain and how many months your savings would last.</p>
       <div className="row2">
-        <div className="field"><label>Take-home (₹)</label><input inputMode="numeric" value={takeHome} onChange={(e) => { setTakeHome(e.target.value); setSaved(false); }} placeholder="140000" /></div>
-        <div className="field"><label>Essentials (₹)</label><input inputMode="numeric" value={essential} onChange={(e) => { setEssential(e.target.value); setSaved(false); }} placeholder="50000" /></div>
+        <div className="field"><label>Take-home (₹)</label><input inputMode="numeric" value={takeHome} disabled={readOnly} onChange={(e) => { setTakeHome(e.target.value); setSaved(false); }} placeholder="140000" /></div>
+        <div className="field"><label>Essentials (₹)</label><input inputMode="numeric" value={essential} disabled={readOnly} onChange={(e) => { setEssential(e.target.value); setSaved(false); }} placeholder="50000" /></div>
       </div>
-      <div className="actions">
-        <button className="btn primary small" type="submit" disabled={busy}>{busy ? "Saving…" : "Save cash flow"}</button>
-        {saved && <span style={{ color: "var(--good)", fontSize: 12.5 }}>Saved ✓</span>}
-      </div>
+      {!readOnly && (
+        <div className="actions">
+          <button className="btn primary small" type="submit" disabled={busy}>{busy ? "Saving…" : "Save cash flow"}</button>
+          {saved && <span style={{ color: "var(--good)", fontSize: 12.5 }}>Saved ✓</span>}
+        </div>
+      )}
     </form>
   );
 }
