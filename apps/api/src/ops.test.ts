@@ -15,9 +15,11 @@ test('asset operations', { skip: hasDb ? false : 'DATABASE_URL not set' }, async
   await new Promise((r) => server.once('listening', r));
   const base = `http://localhost:${(server.address() as AddressInfo).port}`;
 
+  let token = '';
   const call = async (method: string, path: string, body?: unknown) => {
     const res = await fetch(`${base}${path}`, {
-      method, headers: { 'content-type': 'application/json' },
+      method,
+      headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     const text = await res.text();
@@ -28,7 +30,11 @@ test('asset operations', { skip: hasDb ? false : 'DATABASE_URL not set' }, async
   let assetId = '';
 
   try {
-    householdId = (await call('POST', '/api/households', { displayName: 'Ops HH' })).body.id;
+    const reg = (await call('POST', '/api/auth/register', {
+      email: `ops_${Date.now()}_${Math.random().toString(36).slice(2, 9)}@example.com`, password: 'secret123', householdName: 'Ops HH',
+    })).body;
+    token = reg.token;
+    householdId = reg.user.householdId;
     assetId = (await call('POST', `/api/households/${householdId}/assets`, {
       name: 'Home', assetClass: 'real_estate', value: 8000000, liquid: false,
     })).body.id;

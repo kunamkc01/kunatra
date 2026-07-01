@@ -98,6 +98,19 @@ export interface OperationsSummary {
   lastInspection: { rating: InspectionRating; on: string } | null;
 }
 
+export type Role = "owner" | "operations";
+
+export interface User {
+  id: string;
+  householdId: string;
+  email: string;
+  fullName: string | null;
+  role: Role;
+  createdAt?: string;
+}
+
+export interface Session { token: string; user: User; }
+
 export class ApiError extends Error {
   status: number;
   code: string;
@@ -109,11 +122,21 @@ export class ApiError extends Error {
 }
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = getToken();
   const res = await fetch(`${BASE}${path}`, {
     ...init,
-    headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
+    headers: {
+      "content-type": "application/json",
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+      ...(init?.headers ?? {}),
+    },
     cache: "no-store",
   });
+  if (res.status === 401 && typeof window !== "undefined") {
+    // Session gone/expired — drop it and send the user to sign in.
+    clearSession();
+    if (!window.location.pathname.startsWith("/login")) window.location.href = "/login";
+  }
   if (res.status === 204) return undefined as T;
   const text = await res.text();
   const body = text ? JSON.parse(text) : {};
@@ -124,9 +147,20 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  // auth
+  register: (b: { email: string; password: string; fullName?: string; householdName?: string; monthlyTakeHome?: number; monthlyEssential?: number }) =>
+    req<Session>("/api/auth/register", { method: "POST", body: JSON.stringify(b) }),
+  login: (b: { email: string; password: string }) =>
+    req<Session>("/api/auth/login", { method: "POST", body: JSON.stringify(b) }),
+  me: () => req<User>("/api/auth/me"),
+
+  // team (owner only)
+  listUsers: (id: string) => req<User[]>(`/api/households/${id}/users`),
+  createUser: (id: string, b: { email: string; password: string; fullName?: string; role: Role }) =>
+    req<User>(`/api/households/${id}/users`, { method: "POST", body: JSON.stringify(b) }),
+  deleteUser: (userId: string) => req<void>(`/api/users/${userId}`, { method: "DELETE" }),
+
   // households
-  createHousehold: (b: { displayName: string; monthlyTakeHome?: number; monthlyEssential?: number }) =>
-    req<Household>("/api/households", { method: "POST", body: JSON.stringify(b) }),
   getHousehold: (id: string) => req<Household>(`/api/households/${id}`),
   updateHousehold: (id: string, b: Partial<{ displayName: string; monthlyTakeHome: number | null; monthlyEssential: number | null }>) =>
     req<Household>(`/api/households/${id}`, { method: "PATCH", body: JSON.stringify(b) }),
@@ -174,9 +208,29 @@ export const api = {
   operationsSummary: (id: string) => req<OperationsSummary>(`/api/households/${id}/operations/summary`),
 };
 
-// --- current household id, persisted in the browser (Phase 0: single user) ---
-const HH_KEY = "kunatra.householdId";
-export const currentHouseholdId = () =>
-  typeof window === "undefined" ? null : window.localStorage.getItem(HH_KEY);
-export const setCurrentHouseholdId = (id: string) => window.localStorage.setItem(HH_KEY, id);
-export const clearCurrentHousehold = () => window.localStorage.removeItem(HH_KEY);
+// --- session, persisted in the browser ---
+const TOKEN_KEY = "kunatra.token";
+const USER_KEY = "kunatra.user";
+
+export const getToken = () =>
+  typeof window === "undefined" ? null : window.localStorage.getItem(TOKEN_KEY);
+
+export const getUser = (): User | null => {
+  if (typeof window === "undefined") return null;
+  const raw = window.localStorage.getItem(USER_KEY);
+  return raw ? (JSON.parse(raw) as User) : null;
+};
+
+export const saveSession = (s: Session) => {
+  window.localStorage.setItem(TOKEN_KEY, s.token);
+  window.localStorage.setItem(USER_KEY, JSON.stringify(s.user));
+};
+
+export const clearSession = () => {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(TOKEN_KEY);
+  window.localStorage.removeItem(USER_KEY);
+};
+
+/** The current user's household id (from the stored session). */
+export const currentHousehold = () => getUser()?.householdId ?? null;

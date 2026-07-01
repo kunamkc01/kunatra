@@ -1,10 +1,11 @@
 import { pathToFileURL } from 'node:url';
 import express, { type Request, type Response, type NextFunction } from 'express';
-import { assess, salariedSample, type Position } from '@atlas/engine';
+import { assess, salariedSample } from '@atlas/engine';
 import { loadPosition } from './db.ts';
 import { HttpError } from './pool.ts';
 import * as repo from './repo.ts';
 import * as ops from './ops.ts';
+import * as auth from './auth.ts';
 
 export const app = express();
 app.use(express.json());
@@ -13,7 +14,7 @@ app.use(express.json());
 app.use((_req, res, next) => {
   res.header('Access-Control-Allow-Origin', process.env.CORS_ORIGIN ?? '*');
   res.header('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  res.header('Access-Control-Allow-Headers', 'Content-Type,Authorization');
   if (_req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
@@ -26,57 +27,80 @@ const h =
 
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
-// ---- assessment (the engine read) ----------------------------------------
-// Falls back to the bundled salaried sample when no DB / id is configured,
-// so the API is runnable and demoable out of the box.
-app.get('/api/assessment', h(async (req, res) => {
-  const householdId = req.query.household as string | undefined;
-  let position: Position = salariedSample;
-  if (householdId && process.env.DATABASE_URL) position = await loadPosition(householdId);
-  res.json(assess(position));
-}));
+// ---- auth (public) --------------------------------------------------------
+app.post('/api/auth/register', h(async (req, res) => res.status(201).json(await auth.register(req.body))));
+app.post('/api/auth/login', h(async (req, res) => res.json(await auth.login(req.body))));
 
-app.get('/api/households/:id/assessment', h(async (req, res) => {
+// Demo assessment for the bundled sample persona (no real data, so public).
+app.get('/api/assessment', h(async (_req, res) => res.json(assess(salariedSample))));
+
+// Everything else under /api requires a valid session.
+app.use((req, res, next) => {
+  if (req.method === 'OPTIONS' || !req.path.startsWith('/api/')) return next();
+  return auth.authenticate(req, res, next);
+});
+
+const { requireRole, sameHousehold, scopeResource } = auth;
+const ownerOnly = requireRole('owner');
+
+// ---- current user ---------------------------------------------------------
+app.get('/api/auth/me', h(async (req, res) => res.json(await auth.getUserById(req.user!.id))));
+
+// ---- households ----------------------------------------------------------
+app.get('/api/households/:id', sameHousehold, h(async (req, res) => {
+  const hh = await repo.getHousehold(req.params.id);
+  // Financial totals are hidden from operations users.
+  if (req.user!.role !== 'owner') { hh.monthlyTakeHome = null; hh.monthlyEssential = null; }
+  res.json(hh);
+}));
+app.patch('/api/households/:id', sameHousehold, ownerOnly, h(async (req, res) => res.json(await repo.updateHousehold(req.params.id, req.body))));
+app.delete('/api/households/:id', sameHousehold, ownerOnly, h(async (req, res) => { await repo.deleteHousehold(req.params.id); res.sendStatus(204); }));
+
+// ---- assessment (owner only — the net-worth/exposure picture) ------------
+app.get('/api/households/:id/assessment', sameHousehold, ownerOnly, h(async (req, res) => {
   res.json(assess(await loadPosition(req.params.id)));
 }));
 
-// ---- households ----------------------------------------------------------
-app.post('/api/households', h(async (req, res) => res.status(201).json(await repo.createHousehold(req.body))));
-app.get('/api/households/:id', h(async (req, res) => res.json(await repo.getHousehold(req.params.id))));
-app.patch('/api/households/:id', h(async (req, res) => res.json(await repo.updateHousehold(req.params.id, req.body))));
-app.delete('/api/households/:id', h(async (req, res) => { await repo.deleteHousehold(req.params.id); res.sendStatus(204); }));
+// ---- assets (owner + operations; delete is an owner decision) ------------
+app.get('/api/households/:id/assets', sameHousehold, h(async (req, res) => res.json(await repo.listAssets(req.params.id))));
+app.post('/api/households/:id/assets', sameHousehold, h(async (req, res) => res.status(201).json(await repo.createAsset(req.params.id, req.body))));
+app.get('/api/assets/:id', scopeResource('assets'), h(async (req, res) => res.json(await repo.getAsset(req.params.id))));
+app.patch('/api/assets/:id', scopeResource('assets'), h(async (req, res) => res.json(await repo.updateAsset(req.params.id, req.body))));
+app.delete('/api/assets/:id', scopeResource('assets'), ownerOnly, h(async (req, res) => { await repo.deleteAsset(req.params.id); res.sendStatus(204); }));
 
-// ---- assets --------------------------------------------------------------
-app.get('/api/households/:id/assets', h(async (req, res) => res.json(await repo.listAssets(req.params.id))));
-app.post('/api/households/:id/assets', h(async (req, res) => res.status(201).json(await repo.createAsset(req.params.id, req.body))));
-app.get('/api/assets/:id', h(async (req, res) => res.json(await repo.getAsset(req.params.id))));
-app.patch('/api/assets/:id', h(async (req, res) => res.json(await repo.updateAsset(req.params.id, req.body))));
-app.delete('/api/assets/:id', h(async (req, res) => { await repo.deleteAsset(req.params.id); res.sendStatus(204); }));
+// ---- loans (owner only — debt is an owner decision) ----------------------
+app.get('/api/households/:id/loans', sameHousehold, ownerOnly, h(async (req, res) => res.json(await repo.listLoans(req.params.id))));
+app.post('/api/households/:id/loans', sameHousehold, ownerOnly, h(async (req, res) => res.status(201).json(await repo.createLoan(req.params.id, req.body))));
+app.patch('/api/loans/:id', scopeResource('loans'), ownerOnly, h(async (req, res) => res.json(await repo.updateLoan(req.params.id, req.body))));
+app.delete('/api/loans/:id', scopeResource('loans'), ownerOnly, h(async (req, res) => { await repo.deleteLoan(req.params.id); res.sendStatus(204); }));
 
-// ---- loans ---------------------------------------------------------------
-app.get('/api/households/:id/loans', h(async (req, res) => res.json(await repo.listLoans(req.params.id))));
-app.post('/api/households/:id/loans', h(async (req, res) => res.status(201).json(await repo.createLoan(req.params.id, req.body))));
-app.patch('/api/loans/:id', h(async (req, res) => res.json(await repo.updateLoan(req.params.id, req.body))));
-app.delete('/api/loans/:id', h(async (req, res) => { await repo.deleteLoan(req.params.id); res.sendStatus(204); }));
+// ---- operations: vendors (owner + operations) ----------------------------
+app.get('/api/households/:id/vendors', sameHousehold, h(async (req, res) => res.json(await ops.listVendors(req.params.id))));
+app.post('/api/households/:id/vendors', sameHousehold, h(async (req, res) => res.status(201).json(await ops.createVendor(req.params.id, req.body))));
+app.patch('/api/vendors/:id', scopeResource('vendors'), h(async (req, res) => res.json(await ops.updateVendor(req.params.id, req.body))));
+app.delete('/api/vendors/:id', scopeResource('vendors'), h(async (req, res) => { await ops.deleteVendor(req.params.id); res.sendStatus(204); }));
 
-// ---- asset operations: vendors -------------------------------------------
-app.get('/api/households/:id/vendors', h(async (req, res) => res.json(await ops.listVendors(req.params.id))));
-app.post('/api/households/:id/vendors', h(async (req, res) => res.status(201).json(await ops.createVendor(req.params.id, req.body))));
-app.patch('/api/vendors/:id', h(async (req, res) => res.json(await ops.updateVendor(req.params.id, req.body))));
-app.delete('/api/vendors/:id', h(async (req, res) => { await ops.deleteVendor(req.params.id); res.sendStatus(204); }));
+// ---- operations: work orders (owner + operations) ------------------------
+app.get('/api/households/:id/work-orders', sameHousehold, h(async (req, res) => res.json(await ops.listWorkOrders(req.params.id))));
+app.post('/api/households/:id/work-orders', sameHousehold, h(async (req, res) => res.status(201).json(await ops.createWorkOrder(req.params.id, req.body))));
+app.get('/api/work-orders/:id', scopeResource('work_orders'), h(async (req, res) => res.json(await ops.getWorkOrder(req.params.id))));
+app.patch('/api/work-orders/:id', scopeResource('work_orders'), h(async (req, res) => res.json(await ops.updateWorkOrder(req.params.id, req.body))));
+app.delete('/api/work-orders/:id', scopeResource('work_orders'), h(async (req, res) => { await ops.deleteWorkOrder(req.params.id); res.sendStatus(204); }));
 
-// ---- asset operations: work orders ---------------------------------------
-app.get('/api/households/:id/work-orders', h(async (req, res) => res.json(await ops.listWorkOrders(req.params.id))));
-app.post('/api/households/:id/work-orders', h(async (req, res) => res.status(201).json(await ops.createWorkOrder(req.params.id, req.body))));
-app.get('/api/work-orders/:id', h(async (req, res) => res.json(await ops.getWorkOrder(req.params.id))));
-app.patch('/api/work-orders/:id', h(async (req, res) => res.json(await ops.updateWorkOrder(req.params.id, req.body))));
-app.delete('/api/work-orders/:id', h(async (req, res) => { await ops.deleteWorkOrder(req.params.id); res.sendStatus(204); }));
+// ---- operations: inspections & summary (owner + operations) --------------
+app.get('/api/households/:id/inspections', sameHousehold, h(async (req, res) => res.json(await ops.listInspections(req.params.id))));
+app.post('/api/households/:id/inspections', sameHousehold, h(async (req, res) => res.status(201).json(await ops.createInspection(req.params.id, req.body))));
+app.delete('/api/inspections/:id', scopeResource('inspections'), h(async (req, res) => { await ops.deleteInspection(req.params.id); res.sendStatus(204); }));
+app.get('/api/households/:id/operations/summary', sameHousehold, h(async (req, res) => res.json(await ops.operationsSummary(req.params.id))));
 
-// ---- asset operations: inspections & summary -----------------------------
-app.get('/api/households/:id/inspections', h(async (req, res) => res.json(await ops.listInspections(req.params.id))));
-app.post('/api/households/:id/inspections', h(async (req, res) => res.status(201).json(await ops.createInspection(req.params.id, req.body))));
-app.delete('/api/inspections/:id', h(async (req, res) => { await ops.deleteInspection(req.params.id); res.sendStatus(204); }));
-app.get('/api/households/:id/operations/summary', h(async (req, res) => res.json(await ops.operationsSummary(req.params.id))));
+// ---- team / users (owner only) -------------------------------------------
+app.get('/api/households/:id/users', sameHousehold, ownerOnly, h(async (req, res) => res.json(await auth.listUsers(req.params.id))));
+app.post('/api/households/:id/users', sameHousehold, ownerOnly, h(async (req, res) => res.status(201).json(await auth.createUser(req.params.id, req.body))));
+app.delete('/api/users/:id', scopeResource('users'), ownerOnly, h(async (req, res) => {
+  if (req.params.id === req.user!.id) throw new HttpError(400, 'cannot_delete_self', "You can't remove your own account");
+  await auth.deleteUser(req.params.id);
+  res.sendStatus(204);
+}));
 
 // ---- error handling ------------------------------------------------------
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {

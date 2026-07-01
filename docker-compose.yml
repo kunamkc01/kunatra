@@ -13,6 +13,7 @@ services:
       # Loaded once, on first init of an empty data volume (in filename order).
       - ./apps/api/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
       - ./apps/api/db/operations.sql:/docker-entrypoint-initdb.d/02-operations.sql:ro
+      - ./apps/api/db/auth.sql:/docker-entrypoint-initdb.d/03-auth.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U kunatra -d kunatra"]
       interval: 3s
@@ -32,6 +33,7 @@ services:
       DATABASE_URL: postgres://kunatra:kunatra@db:5432/kunatra
       CORS_ORIGIN: http://localhost:3000
       FIELD_ENCRYPTION_KEY: dev-only-not-secret
+      AUTH_SECRET: dev-insecure-secret-change-me
     ports:
       - "4100:4100"
     depends_on:

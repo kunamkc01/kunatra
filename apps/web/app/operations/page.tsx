@@ -2,9 +2,10 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  api, currentHouseholdId,
+  api,
   type Asset, type Vendor, type WorkOrder, type Inspection, type Household, type OperationsSummary, type WorkOrderStatus,
 } from "@/lib/api";
+import { useAuth } from "@/lib/useAuth";
 import { inr } from "@/lib/format";
 import { Shell } from "@/components/Shell";
 import { WorkOrderSheet } from "@/components/WorkOrderSheet";
@@ -18,8 +19,8 @@ const RATING_PILL: Record<string, string> = { good: "p-good", fair: "p-warn", po
 const RATING_TILE: Record<string, string> = { good: "g", fair: "w", poor: "b" };
 
 export default function Operations() {
-  const [ready, setReady] = useState(false);
-  const [hhId, setHhId] = useState<string | null>(null);
+  const { user, ready } = useAuth();
+  const hhId = user?.householdId ?? null;
   const [household, setHousehold] = useState<Household | null>(null);
   const [tab, setTab] = useState<Tab>("work");
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -46,10 +47,8 @@ export default function Operations() {
   }, []);
 
   useEffect(() => {
-    const id = currentHouseholdId();
-    setHhId(id); setReady(true);
-    if (id) load(id);
-  }, [load]);
+    if (ready && user) load(user.householdId);
+  }, [ready, user, load]);
 
   const refresh = () => { if (hhId) load(hhId); };
 

@@ -2,18 +2,17 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import type { Assessment, Signal } from "@atlas/engine";
-import { api, currentHouseholdId, type Household, type Asset, type Loan, type OperationsSummary } from "@/lib/api";
+import { api, type Household, type Asset, type Loan, type OperationsSummary } from "@/lib/api";
+import { useAuth } from "@/lib/useAuth";
 import { inr, assetClassLabel } from "@/lib/format";
 import { Shell } from "@/components/Shell";
-import { Onboarding } from "@/components/Onboarding";
 
 const ALLOC_COLORS = ["var(--navy)", "var(--accent)", "var(--good)", "var(--seal)", "var(--warn)", "var(--muted)", "var(--bad)"];
 const tileClass = (sev?: string) => (sev === "good" ? "g" : sev === "watch" ? "w" : sev === "warning" ? "b" : "");
 const stripClass = (sev?: string) => (sev === "good" ? "good" : sev === "watch" ? "warn" : "bad");
 
 export default function Portfolio() {
-  const [ready, setReady] = useState(false);
-  const [hhId, setHhId] = useState<string | null>(null);
+  const { user, ready } = useAuth({ requireRole: "owner" });
   const [household, setHousehold] = useState<Household | null>(null);
   const [assessment, setAssessment] = useState<Assessment | null>(null);
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -34,29 +33,10 @@ export default function Portfolio() {
   }, []);
 
   useEffect(() => {
-    const id = currentHouseholdId();
-    setHhId(id); setReady(true);
-    if (id) load(id);
-  }, [load]);
-
-  const onOnboarded = () => {
-    const id = currentHouseholdId();
-    setHhId(id);
-    if (id) load(id);
-  };
+    if (ready && user) load(user.householdId);
+  }, [ready, user, load]);
 
   if (!ready) return <Shell><div /></Shell>;
-
-  if (!hhId) {
-    return (
-      <Shell>
-        <Onboarding onDone={onOnboarded} />
-        <p className="explain" style={{ marginTop: 16 }}>
-          A mirror, not an advisor. Kunatra describes your position — it never tells you what to buy, sell or borrow.
-        </p>
-      </Shell>
-    );
-  }
 
   const nw = assessment?.netWorth;
   const ex = assessment?.exposure;
