@@ -76,7 +76,7 @@ open apps/web/prototype/wedge.html   # the static prototype the web app is built
 ```
 
 ## What's here vs what's next
-**Here:** the engine (the hard, durable part — net worth, LTV, EMI strain, runway, concentration, DSCR, with descriptive signals), the data model + schema, a full API (households, assets with real-estate profile, and loans — CRUD over the engine), and the **Next.js web app** at `apps/web` (the mirror + fast manual entry, built to the wedge prototype).
+**Here:** the engine (the hard, durable part — net worth, LTV, EMI strain, runway, concentration, DSCR, with descriptive signals), the data model + schema, a full API (households, assets with real-estate profile, and loans — CRUD over the engine), an **asset-operations module** (work orders with a lifecycle + cost-at-closure gate, vendors, inspections — Tier 2, narrowed), and the **Next.js web app** at `apps/web`: the mirror as a multi-column snapshot (financial + upkeep), fast manual entry, and an operations screen.
 
 **Next:** see `ROADMAP.md` — validate with real users, then Account Aggregator integration and multi-tenant hardening.
 

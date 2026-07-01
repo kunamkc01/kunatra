@@ -45,6 +45,59 @@ export interface Household {
   createdAt: string;
 }
 
+// ---- asset operations -----------------------------------------------------
+
+export type WorkOrderStatus = "open" | "in_progress" | "done" | "cancelled";
+export type WorkOrderCategory = "repair" | "maintenance" | "amc" | "improvement" | "other";
+export type InspectionRating = "good" | "fair" | "poor";
+
+export interface Vendor {
+  id: string;
+  householdId: string;
+  name: string;
+  category: string | null;
+  phone: string | null;
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface WorkOrder {
+  id: string;
+  householdId: string;
+  assetId: string | null;
+  vendorId: string | null;
+  assetName: string | null;
+  vendorName: string | null;
+  title: string;
+  category: WorkOrderCategory;
+  status: WorkOrderStatus;
+  scheduledFor: string | null;
+  estimatedCost: number | null;
+  actualCost: number | null;
+  notes: string | null;
+  closureNote: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Inspection {
+  id: string;
+  householdId: string;
+  assetId: string | null;
+  assetName: string | null;
+  inspectedOn: string;
+  rating: InspectionRating;
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface OperationsSummary {
+  workOrders: { open: number; inProgress: number; done: number; cancelled: number; active: number };
+  maintenanceSpendYtd: number;
+  vendors: number;
+  lastInspection: { rating: InspectionRating; on: string } | null;
+}
+
 export class ApiError extends Error {
   status: number;
   code: string;
@@ -96,6 +149,29 @@ export const api = {
   updateLoan: (loanId: string, b: Partial<Loan>) =>
     req<Loan>(`/api/loans/${loanId}`, { method: "PATCH", body: JSON.stringify(b) }),
   deleteLoan: (loanId: string) => req<void>(`/api/loans/${loanId}`, { method: "DELETE" }),
+
+  // operations: vendors
+  listVendors: (id: string) => req<Vendor[]>(`/api/households/${id}/vendors`),
+  createVendor: (id: string, b: Partial<Vendor>) =>
+    req<Vendor>(`/api/households/${id}/vendors`, { method: "POST", body: JSON.stringify(b) }),
+  updateVendor: (vendorId: string, b: Partial<Vendor>) =>
+    req<Vendor>(`/api/vendors/${vendorId}`, { method: "PATCH", body: JSON.stringify(b) }),
+  deleteVendor: (vendorId: string) => req<void>(`/api/vendors/${vendorId}`, { method: "DELETE" }),
+
+  // operations: work orders
+  listWorkOrders: (id: string) => req<WorkOrder[]>(`/api/households/${id}/work-orders`),
+  createWorkOrder: (id: string, b: Partial<WorkOrder>) =>
+    req<WorkOrder>(`/api/households/${id}/work-orders`, { method: "POST", body: JSON.stringify(b) }),
+  updateWorkOrder: (woId: string, b: Partial<WorkOrder> & { status?: WorkOrderStatus }) =>
+    req<WorkOrder>(`/api/work-orders/${woId}`, { method: "PATCH", body: JSON.stringify(b) }),
+  deleteWorkOrder: (woId: string) => req<void>(`/api/work-orders/${woId}`, { method: "DELETE" }),
+
+  // operations: inspections + summary
+  listInspections: (id: string) => req<Inspection[]>(`/api/households/${id}/inspections`),
+  createInspection: (id: string, b: Partial<Inspection>) =>
+    req<Inspection>(`/api/households/${id}/inspections`, { method: "POST", body: JSON.stringify(b) }),
+  deleteInspection: (inspId: string) => req<void>(`/api/inspections/${inspId}`, { method: "DELETE" }),
+  operationsSummary: (id: string) => req<OperationsSummary>(`/api/households/${id}/operations/summary`),
 };
 
 // --- current household id, persisted in the browser (Phase 0: single user) ---

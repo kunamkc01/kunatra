@@ -1,5 +1,9 @@
 import pg from 'pg';
 
+// Return DATE columns (OID 1082) as plain 'YYYY-MM-DD' strings, not JS Date objects —
+// otherwise they serialize to UTC and can drift a day across timezones.
+pg.types.setTypeParser(1082, (v) => v);
+
 /**
  * The single Postgres pool for the API. Null when DATABASE_URL is unset —
  * read endpoints then fall back to the bundled sample, and write endpoints 400.

@@ -96,6 +96,41 @@ a { color: inherit; }
 .err { color: var(--warn); font-size: 12.5px; margin-top: 8px; }
 .empty { font-size: 13px; color: var(--muted); padding: 8px 2px; }
 
+/* Wider container for the multi-column dashboard */
+.app.wide { max-width: 760px; }
+
+/* Snapshot grid — multi-column KPI tiles */
+.snap-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+.snap { background: var(--surface); border: 1px solid var(--line); border-left-width: 3px; border-radius: 12px; padding: 13px 15px; }
+.snap .k { font-size: 12.5px; color: var(--slate); font-weight: 500; }
+.snap .v { font-family: var(--mono); font-size: 22px; font-weight: 500; margin: 3px 0 2px; color: var(--ink); }
+.snap .m { font-size: 11.5px; color: var(--muted); line-height: 1.45; }
+.snap.g { border-left-color: var(--good); } .snap.g .v { color: var(--good); }
+.snap.w { border-left-color: var(--watch); } .snap.w .v { color: var(--watch); }
+.snap.b { border-left-color: var(--warn); } .snap.b .v { color: var(--warn); }
+.snap.n { border-left-color: var(--line); }
+
+/* Status pills */
+.pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 500; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--line); color: var(--slate); background: var(--surface); text-transform: capitalize; }
+.pill .pdot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.pill.s-open { color: var(--watch); background: var(--watch-bg); border-color: transparent; }
+.pill.s-in_progress { color: var(--navy); background: #E9EEF7; border-color: transparent; }
+.pill.s-done { color: var(--good); background: var(--good-bg); border-color: transparent; }
+.pill.s-cancelled { color: var(--muted); }
+.pill.r-good { color: var(--good); background: var(--good-bg); border-color: transparent; }
+.pill.r-fair { color: var(--watch); background: var(--watch-bg); border-color: transparent; }
+.pill.r-poor { color: var(--warn); background: var(--warn-bg); border-color: transparent; }
+
+/* Work order / list rows with a header line */
+.wo { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 13px 15px; margin-bottom: 10px; }
+.wo .h { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.wo .t { font-size: 14px; font-weight: 500; }
+.wo .meta { font-size: 12px; color: var(--slate); margin-top: 4px; }
+.wo .acts { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+.tabs { display: flex; gap: 6px; margin: 6px 0 16px; flex-wrap: wrap; }
+.tab { font-size: 13px; font-weight: 500; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--slate); cursor: pointer; }
+.tab.active { background: var(--navy); color: #fff; border-color: var(--navy); }
+
 /* Overlay modal */
 .overlay { position: fixed; inset: 0; background: rgba(22,36,63,0.35); display: flex; align-items: flex-end; justify-content: center; padding: 0; z-index: 50; }
 .sheet { background: var(--page); width: 100%; max-width: 460px; border-radius: 18px 18px 0 0; padding: 20px 18px 28px; max-height: 92vh; overflow-y: auto; }

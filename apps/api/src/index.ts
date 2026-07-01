@@ -4,6 +4,7 @@ import { assess, salariedSample, type Position } from '@atlas/engine';
 import { loadPosition } from './db.ts';
 import { HttpError } from './pool.ts';
 import * as repo from './repo.ts';
+import * as ops from './ops.ts';
 
 export const app = express();
 app.use(express.json());
@@ -57,6 +58,25 @@ app.get('/api/households/:id/loans', h(async (req, res) => res.json(await repo.l
 app.post('/api/households/:id/loans', h(async (req, res) => res.status(201).json(await repo.createLoan(req.params.id, req.body))));
 app.patch('/api/loans/:id', h(async (req, res) => res.json(await repo.updateLoan(req.params.id, req.body))));
 app.delete('/api/loans/:id', h(async (req, res) => { await repo.deleteLoan(req.params.id); res.sendStatus(204); }));
+
+// ---- asset operations: vendors -------------------------------------------
+app.get('/api/households/:id/vendors', h(async (req, res) => res.json(await ops.listVendors(req.params.id))));
+app.post('/api/households/:id/vendors', h(async (req, res) => res.status(201).json(await ops.createVendor(req.params.id, req.body))));
+app.patch('/api/vendors/:id', h(async (req, res) => res.json(await ops.updateVendor(req.params.id, req.body))));
+app.delete('/api/vendors/:id', h(async (req, res) => { await ops.deleteVendor(req.params.id); res.sendStatus(204); }));
+
+// ---- asset operations: work orders ---------------------------------------
+app.get('/api/households/:id/work-orders', h(async (req, res) => res.json(await ops.listWorkOrders(req.params.id))));
+app.post('/api/households/:id/work-orders', h(async (req, res) => res.status(201).json(await ops.createWorkOrder(req.params.id, req.body))));
+app.get('/api/work-orders/:id', h(async (req, res) => res.json(await ops.getWorkOrder(req.params.id))));
+app.patch('/api/work-orders/:id', h(async (req, res) => res.json(await ops.updateWorkOrder(req.params.id, req.body))));
+app.delete('/api/work-orders/:id', h(async (req, res) => { await ops.deleteWorkOrder(req.params.id); res.sendStatus(204); }));
+
+// ---- asset operations: inspections & summary -----------------------------
+app.get('/api/households/:id/inspections', h(async (req, res) => res.json(await ops.listInspections(req.params.id))));
+app.post('/api/households/:id/inspections', h(async (req, res) => res.status(201).json(await ops.createInspection(req.params.id, req.body))));
+app.delete('/api/inspections/:id', h(async (req, res) => { await ops.deleteInspection(req.params.id); res.sendStatus(204); }));
+app.get('/api/households/:id/operations/summary', h(async (req, res) => res.json(await ops.operationsSummary(req.params.id))));
 
 // ---- error handling ------------------------------------------------------
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {

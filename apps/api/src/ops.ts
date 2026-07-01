@@ -1,0 +1,269 @@
+// Asset Operations Management — vendors, work orders (with a lifecycle + cost-at-closure
+// gate) and inspections. Money crosses the boundary in rupees; the DB stores paise.
+import { db, rupeesToPaise, paiseToRupees, HttpError } from './pool.ts';
+import { getHousehold } from './repo.ts';
+
+// ---- validation helpers ---------------------------------------------------
+
+function str(v: unknown, field: string, { required = false } = {}): string | undefined {
+  if (v == null || v === '') {
+    if (required) throw new HttpError(400, 'invalid_input', `${field} is required`);
+    return undefined;
+  }
+  if (typeof v !== 'string') throw new HttpError(400, 'invalid_input', `${field} must be a string`);
+  return v.trim();
+}
+
+function money(v: unknown, field: string): number | null {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0) throw new HttpError(400, 'invalid_input', `${field} must be a non-negative number`);
+  return n;
+}
+
+function dateStr(v: unknown, field: string, { required = false } = {}): string | null {
+  if (v == null || v === '') {
+    if (required) throw new HttpError(400, 'invalid_input', `${field} is required`);
+    return null;
+  }
+  const s = String(v);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) throw new HttpError(400, 'invalid_input', `${field} must be a date (YYYY-MM-DD)`);
+  return s;
+}
+
+function oneOf<T extends string>(v: unknown, allowed: readonly T[], field: string, dflt?: T): T {
+  if ((v == null || v === '') && dflt !== undefined) return dflt;
+  if (!allowed.includes(v as T)) throw new HttpError(400, 'invalid_input', `${field} must be one of: ${allowed.join(', ')}`);
+  return v as T;
+}
+
+const CATEGORIES = ['repair', 'maintenance', 'amc', 'improvement', 'other'] as const;
+const STATUSES = ['open', 'in_progress', 'done', 'cancelled'] as const;
+const RATINGS = ['good', 'fair', 'poor'] as const;
+type Status = (typeof STATUSES)[number];
+
+// Allowed status transitions. Closing (-> done) additionally requires an actual cost.
+const TRANSITIONS: Record<Status, Status[]> = {
+  open: ['in_progress', 'done', 'cancelled'],
+  in_progress: ['done', 'open', 'cancelled'],
+  done: ['in_progress'], // reopen
+  cancelled: ['open'],
+};
+
+// ---- vendors --------------------------------------------------------------
+
+const vendorRow = (r: any) => ({
+  id: r.id, householdId: r.household_id, name: r.name,
+  category: r.category ?? null, phone: r.phone ?? null, notes: r.notes ?? null, createdAt: r.created_at,
+});
+
+export async function listVendors(householdId: string) {
+  await getHousehold(householdId);
+  const { rows } = await db().query(`SELECT * FROM vendors WHERE household_id = $1 ORDER BY name`, [householdId]);
+  return rows.map(vendorRow);
+}
+
+export async function createVendor(householdId: string, body: any) {
+  await getHousehold(householdId);
+  const { rows } = await db().query(
+    `INSERT INTO vendors (household_id, name, category, phone, notes) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+    [householdId, str(body.name, 'name', { required: true }), str(body.category, 'category') ?? null,
+     str(body.phone, 'phone') ?? null, str(body.notes, 'notes') ?? null]
+  );
+  return vendorRow(rows[0]);
+}
+
+export async function updateVendor(id: string, body: any) {
+  const sets: string[] = []; const vals: any[] = [];
+  const push = (c: string, v: any) => { vals.push(v); sets.push(`${c} = $${vals.length}`); };
+  if ('name' in body) push('name', str(body.name, 'name', { required: true }));
+  if ('category' in body) push('category', str(body.category, 'category') ?? null);
+  if ('phone' in body) push('phone', str(body.phone, 'phone') ?? null);
+  if ('notes' in body) push('notes', str(body.notes, 'notes') ?? null);
+  if (sets.length === 0) {
+    const { rows } = await db().query(`SELECT * FROM vendors WHERE id = $1`, [id]);
+    if (rows.length === 0) throw new HttpError(404, 'vendor_not_found');
+    return vendorRow(rows[0]);
+  }
+  vals.push(id);
+  const { rows } = await db().query(`UPDATE vendors SET ${sets.join(', ')} WHERE id = $${vals.length} RETURNING *`, vals);
+  if (rows.length === 0) throw new HttpError(404, 'vendor_not_found');
+  return vendorRow(rows[0]);
+}
+
+export async function deleteVendor(id: string) {
+  const { rowCount } = await db().query(`DELETE FROM vendors WHERE id = $1`, [id]);
+  if (rowCount === 0) throw new HttpError(404, 'vendor_not_found');
+}
+
+// ---- work orders ----------------------------------------------------------
+
+const woRow = (r: any) => ({
+  id: r.id, householdId: r.household_id, assetId: r.asset_id ?? null, vendorId: r.vendor_id ?? null,
+  assetName: r.asset_name ?? null, vendorName: r.vendor_name ?? null,
+  title: r.title, category: r.category, status: r.status,
+  scheduledFor: r.scheduled_for ?? null,
+  estimatedCost: r.estimated_cost_paise != null ? paiseToRupees(r.estimated_cost_paise) : null,
+  actualCost: r.actual_cost_paise != null ? paiseToRupees(r.actual_cost_paise) : null,
+  notes: r.notes ?? null, closureNote: r.closure_note ?? null,
+  createdAt: r.created_at, updatedAt: r.updated_at,
+});
+
+const WO_SELECT = `
+  SELECT w.*, a.name AS asset_name, v.name AS vendor_name
+    FROM work_orders w
+    LEFT JOIN assets a ON a.id = w.asset_id
+    LEFT JOIN vendors v ON v.id = w.vendor_id`;
+
+export async function listWorkOrders(householdId: string) {
+  await getHousehold(householdId);
+  const { rows } = await db().query(
+    `${WO_SELECT} WHERE w.household_id = $1
+      ORDER BY array_position(ARRAY['in_progress','open','done','cancelled']::text[], w.status::text), w.updated_at DESC`,
+    [householdId]
+  );
+  return rows.map(woRow);
+}
+
+async function getWorkOrderRaw(id: string) {
+  const { rows } = await db().query(`${WO_SELECT} WHERE w.id = $1`, [id]);
+  if (rows.length === 0) throw new HttpError(404, 'work_order_not_found');
+  return rows[0];
+}
+
+export async function getWorkOrder(id: string) {
+  return woRow(await getWorkOrderRaw(id));
+}
+
+export async function createWorkOrder(householdId: string, body: any) {
+  await getHousehold(householdId);
+  const estimated = money(body.estimatedCost, 'estimatedCost');
+  const actual = money(body.actualCost, 'actualCost');
+  const status = oneOf(body.status, STATUSES, 'status', 'open');
+  if (status === 'done' && actual == null) {
+    throw new HttpError(400, 'closure_requires_cost', 'Closing a work order requires an actual cost');
+  }
+  const { rows } = await db().query(
+    `INSERT INTO work_orders
+       (household_id, asset_id, vendor_id, title, category, status, scheduled_for, estimated_cost_paise, actual_cost_paise, notes, closure_note)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
+    [householdId, str(body.assetId, 'assetId') ?? null, str(body.vendorId, 'vendorId') ?? null,
+     str(body.title, 'title', { required: true }),
+     oneOf(body.category, CATEGORIES, 'category', 'repair'), status,
+     dateStr(body.scheduledFor, 'scheduledFor'),
+     estimated != null ? rupeesToPaise(estimated) : null,
+     actual != null ? rupeesToPaise(actual) : null,
+     str(body.notes, 'notes') ?? null, str(body.closureNote, 'closureNote') ?? null]
+  );
+  return getWorkOrder(rows[0].id);
+}
+
+export async function updateWorkOrder(id: string, body: any) {
+  const current = await getWorkOrderRaw(id);
+  const sets: string[] = []; const vals: any[] = [];
+  const push = (c: string, v: any) => { vals.push(v); sets.push(`${c} = $${vals.length}`); };
+
+  // Status transition (validated against the state machine + closure gate).
+  if ('status' in body && body.status !== current.status) {
+    const next = oneOf(body.status, STATUSES, 'status');
+    if (!TRANSITIONS[current.status as Status].includes(next)) {
+      throw new HttpError(409, 'invalid_transition', `Cannot move a work order from ${current.status} to ${next}`);
+    }
+    if (next === 'done') {
+      // The closure gate: an actual cost must be known (from the body or already stored).
+      const providedActual = 'actualCost' in body ? money(body.actualCost, 'actualCost') : null;
+      if (providedActual == null && current.actual_cost_paise == null) {
+        throw new HttpError(400, 'closure_requires_cost', 'Closing a work order requires an actual cost');
+      }
+    }
+    push('status', next);
+  }
+
+  if ('title' in body) push('title', str(body.title, 'title', { required: true }));
+  if ('category' in body) push('category', oneOf(body.category, CATEGORIES, 'category'));
+  if ('assetId' in body) push('asset_id', str(body.assetId, 'assetId') ?? null);
+  if ('vendorId' in body) push('vendor_id', str(body.vendorId, 'vendorId') ?? null);
+  if ('scheduledFor' in body) push('scheduled_for', dateStr(body.scheduledFor, 'scheduledFor'));
+  if ('estimatedCost' in body) { const m = money(body.estimatedCost, 'estimatedCost'); push('estimated_cost_paise', m != null ? rupeesToPaise(m) : null); }
+  if ('actualCost' in body) { const m = money(body.actualCost, 'actualCost'); push('actual_cost_paise', m != null ? rupeesToPaise(m) : null); }
+  if ('notes' in body) push('notes', str(body.notes, 'notes') ?? null);
+  if ('closureNote' in body) push('closure_note', str(body.closureNote, 'closureNote') ?? null);
+
+  if (sets.length === 0) return woRow(current);
+  push('updated_at', new Date());
+  vals.push(id);
+  await db().query(`UPDATE work_orders SET ${sets.join(', ')} WHERE id = $${vals.length}`, vals);
+  return getWorkOrder(id);
+}
+
+export async function deleteWorkOrder(id: string) {
+  const { rowCount } = await db().query(`DELETE FROM work_orders WHERE id = $1`, [id]);
+  if (rowCount === 0) throw new HttpError(404, 'work_order_not_found');
+}
+
+// ---- inspections ----------------------------------------------------------
+
+const inspectionRow = (r: any) => ({
+  id: r.id, householdId: r.household_id, assetId: r.asset_id ?? null, assetName: r.asset_name ?? null,
+  inspectedOn: r.inspected_on, rating: r.rating, notes: r.notes ?? null, createdAt: r.created_at,
+});
+
+export async function listInspections(householdId: string) {
+  await getHousehold(householdId);
+  const { rows } = await db().query(
+    `SELECT i.*, a.name AS asset_name FROM inspections i LEFT JOIN assets a ON a.id = i.asset_id
+      WHERE i.household_id = $1 ORDER BY i.inspected_on DESC`,
+    [householdId]
+  );
+  return rows.map(inspectionRow);
+}
+
+export async function createInspection(householdId: string, body: any) {
+  await getHousehold(householdId);
+  const { rows } = await db().query(
+    `INSERT INTO inspections (household_id, asset_id, inspected_on, rating, notes) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+    [householdId, str(body.assetId, 'assetId') ?? null, dateStr(body.inspectedOn, 'inspectedOn', { required: true }),
+     oneOf(body.rating, RATINGS, 'rating'), str(body.notes, 'notes') ?? null]
+  );
+  const { rows: full } = await db().query(
+    `SELECT i.*, a.name AS asset_name FROM inspections i LEFT JOIN assets a ON a.id = i.asset_id WHERE i.id = $1`, [rows[0].id]);
+  return inspectionRow(full[0]);
+}
+
+export async function deleteInspection(id: string) {
+  const { rowCount } = await db().query(`DELETE FROM inspections WHERE id = $1`, [id]);
+  if (rowCount === 0) throw new HttpError(404, 'inspection_not_found');
+}
+
+// ---- summary (for the dashboard "upkeep" snapshot) ------------------------
+
+export async function operationsSummary(householdId: string) {
+  await getHousehold(householdId);
+  const pool = db();
+  const [wo, spend, insp, vend] = await Promise.all([
+    pool.query(
+      `SELECT status, count(*)::int AS n FROM work_orders WHERE household_id = $1 GROUP BY status`, [householdId]),
+    pool.query(
+      `SELECT COALESCE(SUM(actual_cost_paise),0) AS paise FROM work_orders
+        WHERE household_id = $1 AND status = 'done' AND date_part('year', updated_at) = date_part('year', now())`, [householdId]),
+    pool.query(
+      `SELECT rating, inspected_on FROM inspections WHERE household_id = $1 ORDER BY inspected_on DESC LIMIT 1`, [householdId]),
+    pool.query(`SELECT count(*)::int AS n FROM vendors WHERE household_id = $1`, [householdId]),
+  ]);
+
+  const byStatus: Record<string, number> = { open: 0, in_progress: 0, done: 0, cancelled: 0 };
+  for (const r of wo.rows) byStatus[r.status] = r.n;
+
+  return {
+    workOrders: {
+      open: byStatus.open,
+      inProgress: byStatus.in_progress,
+      done: byStatus.done,
+      cancelled: byStatus.cancelled,
+      active: byStatus.open + byStatus.in_progress,
+    },
+    maintenanceSpendYtd: paiseToRupees(spend.rows[0].paise),
+    vendors: vend.rows[0].n,
+    lastInspection: insp.rows[0] ? { rating: insp.rows[0].rating, on: insp.rows[0].inspected_on } : null,
+  };
+}

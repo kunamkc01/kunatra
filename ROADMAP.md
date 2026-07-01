@@ -24,7 +24,10 @@ Three tiers (from `docs/product-concept.md`), delivered in dependency order. Tie
 - [ ] Portfolio-investor front door (XIRR, allocation, multi-property exposure)
 
 ## Tier 2 — Management (limited audience)
-- [ ] Asset operations for managed assets (the family-office capability, narrowed)
+- [x] Asset operations: work orders (lifecycle + cost-at-closure gate), vendors, inspections, upkeep summary
+- [ ] Roles & permissions (owner / manager-employee / read-only), portfolio-scoped, audit trail
+- [ ] Recurring obligations & compliance calendar (tax, renewals, inspections due)
+- [ ] Tenancy (rent due vs received, arrears) for let property
 - [ ] Invite-only
 
 ## Tier 3 — Guidance (personal first)
