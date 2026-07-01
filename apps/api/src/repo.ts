@@ -31,6 +31,13 @@ function bool(v: unknown): boolean | undefined {
   return Boolean(v);
 }
 
+function year(v: unknown, field: string): number | null {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  if (!Number.isInteger(n) || n < 1900 || n > 2100) throw new HttpError(400, 'invalid_input', `${field} must be a 4-digit year`);
+  return n;
+}
+
 function assetClass(v: unknown): AssetClass {
   if (!ASSET_CLASSES.includes(v as AssetClass)) {
     throw new HttpError(400, 'invalid_input', `assetClass must be one of: ${ASSET_CLASSES.join(', ')}`);
@@ -164,6 +171,8 @@ const assetRow = (r: any) => ({
   costBasis: r.cost_basis_paise != null ? paiseToRupees(r.cost_basis_paise) : null,
   monthlyContribution: r.monthly_contribution_paise != null ? paiseToRupees(r.monthly_contribution_paise) : null,
   monthlyRent: r.monthly_rent_paise != null ? paiseToRupees(r.monthly_rent_paise) : null,
+  acquiredHow: r.acquired_how ?? null,
+  acquiredYear: r.acquired_year ?? null,
   realEstate: r.address != null || r.ptin != null || r.sqft != null
     ? {
         address: r.address ?? null,
@@ -219,13 +228,15 @@ export async function createAsset(householdId: string, body: any) {
   try {
     await client.query('BEGIN');
     const { rows } = await client.query(
-      `INSERT INTO assets (household_id, name, asset_class, current_value_paise, liquid, cost_basis_paise, monthly_contribution_paise, member_id, monthly_rent_paise)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+      `INSERT INTO assets (household_id, name, asset_class, current_value_paise, liquid, cost_basis_paise, monthly_contribution_paise, member_id, monthly_rent_paise, acquired_how, acquired_year)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
       [householdId, name, cls, rupeesToPaise(value), liquid,
        costBasis != null ? rupeesToPaise(costBasis) : null,
        monthly != null ? rupeesToPaise(monthly) : null,
        str(body.memberId, 'memberId') ?? null,
-       rent != null ? rupeesToPaise(rent) : null]
+       rent != null ? rupeesToPaise(rent) : null,
+       str(body.acquiredHow, 'acquiredHow') ?? null,
+       year(body.acquiredYear, 'acquiredYear')]
     );
     const id = rows[0].id;
     if (cls === 'real_estate' && body.realEstate) await upsertRealEstate(client, id, body.realEstate);
@@ -253,6 +264,8 @@ export async function updateAsset(id: string, body: any) {
   if ('monthlyContribution' in body) { const m = money(body.monthlyContribution, 'monthlyContribution'); push('monthly_contribution_paise', m != null ? rupeesToPaise(m) : null); }
   if ('memberId' in body) push('member_id', str(body.memberId, 'memberId') ?? null);
   if ('monthlyRent' in body) { const m = money(body.monthlyRent, 'monthlyRent'); push('monthly_rent_paise', m != null ? rupeesToPaise(m) : null); }
+  if ('acquiredHow' in body) push('acquired_how', str(body.acquiredHow, 'acquiredHow') ?? null);
+  if ('acquiredYear' in body) push('acquired_year', year(body.acquiredYear, 'acquiredYear'));
 
   const client = await db().connect();
   try {

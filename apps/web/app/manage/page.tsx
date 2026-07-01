@@ -87,7 +87,7 @@ export default function Assets() {
         <td style={{ paddingLeft: nested ? 26 : 8 }}>
           {nested && <span className="muted">↳ </span>}
           <span style={{ fontWeight: 500 }}>{a.name}</span>
-          <div style={{ fontSize: 11, color: "var(--muted)" }}>{assetClassLabel(a.assetClass)}{a.liquid ? " · liquid" : ""}{a.memberId ? ` · ${memberName(a.memberId) ?? "member"}` : ""}{a.realEstate?.address ? ` · ${a.realEstate.address}` : ""}</div>
+          <div style={{ fontSize: 11, color: "var(--muted)" }}>{assetClassLabel(a.assetClass)}{a.acquiredHow && a.acquiredYear ? ` · ${a.acquiredHow} ${a.acquiredYear}` : ""}{a.liquid ? " · liquid" : ""}{a.memberId ? ` · ${memberName(a.memberId) ?? "member"}` : ""}{a.realEstate?.address ? ` · ${a.realEstate.address}` : ""}</div>
         </td>
         <td className="tnum">{inr(a.value)}</td>
         {canSeeFinancials && <td className="tnum" style={{ color: loan > 0 ? "var(--bad)" : "var(--muted)" }}>{loan > 0 ? inr(loan) : "—"}</td>}

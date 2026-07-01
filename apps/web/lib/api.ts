@@ -61,6 +61,8 @@ export interface Asset {
   costBasis: number | null;
   monthlyContribution: number | null;
   monthlyRent: number | null;
+  acquiredHow: string | null;
+  acquiredYear: number | null;
   realEstate: RealEstate | null;
 }
 
