@@ -91,6 +91,11 @@ export async function updateHousehold(id: string, body: any) {
   return householdRow(rows[0]);
 }
 
+export async function deleteHousehold(id: string) {
+  const { rowCount } = await db().query(`DELETE FROM households WHERE id = $1`, [id]);
+  if (rowCount === 0) throw new HttpError(404, 'household_not_found');
+}
+
 // ---- assets (with optional real-estate profile) ---------------------------
 
 const assetRow = (r: any) => ({

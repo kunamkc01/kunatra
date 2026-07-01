@@ -1,10 +1,11 @@
+import { pathToFileURL } from 'node:url';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import { assess, salariedSample, type Position } from '@atlas/engine';
 import { loadPosition } from './db.ts';
 import { HttpError } from './pool.ts';
 import * as repo from './repo.ts';
 
-const app = express();
+export const app = express();
 app.use(express.json());
 
 // Permissive CORS for local development (Next.js dev server on :3000).
@@ -42,6 +43,7 @@ app.get('/api/households/:id/assessment', h(async (req, res) => {
 app.post('/api/households', h(async (req, res) => res.status(201).json(await repo.createHousehold(req.body))));
 app.get('/api/households/:id', h(async (req, res) => res.json(await repo.getHousehold(req.params.id))));
 app.patch('/api/households/:id', h(async (req, res) => res.json(await repo.updateHousehold(req.params.id, req.body))));
+app.delete('/api/households/:id', h(async (req, res) => { await repo.deleteHousehold(req.params.id); res.sendStatus(204); }));
 
 // ---- assets --------------------------------------------------------------
 app.get('/api/households/:id/assets', h(async (req, res) => res.json(await repo.listAssets(req.params.id))));
@@ -63,5 +65,9 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   res.status(500).json({ error: 'internal_error' });
 });
 
-const port = Number(process.env.PORT ?? 4000);
-app.listen(port, () => console.log(`Kunatra API on :${port}`));
+// Only start the server when run directly (not when imported by tests).
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (isMain) {
+  const port = Number(process.env.PORT ?? 4000);
+  app.listen(port, () => console.log(`Kunatra API on :${port}`));
+}
