@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Atlas — where you stand</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#16243F; --navy:#1F3864; --slate:#5A6473; --muted:#8A92A0;
+    --page:#F3F1EC; --surface:#FFFFFF; --line:#E6E3DC;
+    --good:#1F7A5A; --good-bg:#E7F2EC; --watch:#A8700C; --watch-bg:#FBF1DD;
+    --warn:#B23A3A; --warn-bg:#F8E9E9; --mono:'IBM Plex Mono',monospace;
+  }
+  *{box-sizing:border-box} html,body{margin:0}
+  body{background:var(--page); color:var(--ink); font-family:'Inter',system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased; padding:24px 16px; line-height:1.5;}
+  .app{max-width:440px; margin:0 auto;}
+  .bar{display:flex; align-items:baseline; gap:8px; margin-bottom:26px;}
+  .logo{font-family:'Fraunces',serif; font-weight:600; font-size:22px; color:var(--navy);}
+  .tag{font-size:12.5px; color:var(--muted);}
+  .hero{background:var(--surface); border:1px solid var(--line); border-radius:18px; padding:24px 22px; margin-bottom:14px;}
+  .hero .lbl{font-size:13px; color:var(--slate);}
+  .hero .nw{font-family:'Fraunces',serif; font-weight:600; font-size:46px; line-height:1.1; margin:4px 0 14px; color:var(--navy);}
+  .hero .row{display:flex; gap:22px; font-size:13px; color:var(--slate);}
+  .hero .row b{display:block; font-family:var(--mono); font-size:15px; color:var(--ink); font-weight:500; margin-top:2px;}
+  .sec{font-size:13px; color:var(--slate); margin:22px 4px 10px; font-weight:500;}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:14px 16px; margin-bottom:10px;
+    display:flex; align-items:center; gap:14px;}
+  .dot{width:9px; height:9px; border-radius:50%; flex:none;}
+  .card .body{flex:1; min-width:0;}
+  .card .top{display:flex; justify-content:space-between; align-items:baseline; gap:10px;}
+  .card .label{font-size:13.5px; font-weight:500;}
+  .card .val{font-family:var(--mono); font-size:15px; font-weight:500;}
+  .card .msg{font-size:12.5px; color:var(--slate); margin-top:3px;}
+  .g .dot{background:var(--good)} .g .val{color:var(--good)}
+  .w .dot{background:var(--watch)} .w .val{color:var(--watch)}
+  .b .dot{background:var(--warn)} .b .val{color:var(--warn)}
+  .foot{font-size:11.5px; color:var(--muted); margin-top:18px; padding:0 4px; line-height:1.5;}
+  .stance{background:var(--surface); border:1px dashed var(--line); border-radius:12px; padding:12px 14px; font-size:12.5px; color:var(--slate); margin-top:14px;}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="bar"><span class="logo">Atlas</span><span class="tag">your money, honestly</span></div>
+
+  <div class="hero">
+    <div class="lbl">You're worth</div>
+    <div class="nw" id="nw">&#8377;&#8212;</div>
+    <div class="row">
+      <div>Everything you own<b id="gross">&#8377;&#8212;</b></div>
+      <div>What you owe<b id="debt" style="color:var(--warn)">&#8377;&#8212;</b></div>
+    </div>
+  </div>
+
+  <div class="sec">Where you stand</div>
+  <div id="signals"></div>
+
+  <div class="stance">Atlas shows you your position. It doesn&#8217;t tell you what to buy, sell or borrow &#8212; that&#8217;s your call.</div>
+  <div class="foot">Illustrative figures for a salaried professional with one financed home, a SIP, EPF/PPF and some savings. Not financial advice.</div>
+</div>
+
+<script>
+// --- a faithful port of @atlas/engine for this static demo ---
+const sum = xs => xs.reduce((a,b)=>a+b,0);
+const position = {
+  assets: [
+    { id:'flat', name:'Home (2BHK)', assetClass:'real_estate', value:8500000, liquid:false },
+    { id:'epf', name:'EPF', assetClass:'epf', value:900000, liquid:false },
+    { id:'ppf', name:'PPF', assetClass:'ppf', value:400000, liquid:false },
+    { id:'mf', name:'Equity mutual funds', assetClass:'mutual_fund', value:500000, liquid:true },
+    { id:'cash', name:'Savings', assetClass:'cash', value:400000, liquid:true },
+    { id:'gold', name:'Gold', assetClass:'gold', value:300000, liquid:false },
+    { id:'lic', name:'LIC policy', assetClass:'insurance', value:200000, liquid:false },
+  ],
+  loans: [ { id:'home', name:'Home loan', outstanding:5800000, emiMonthly:52000, ratePct:8.6, securedAgainstAssetId:'flat' } ],
+  income:{ monthlyTakeHome:140000 }, expenses:{ monthlyEssential:50000 },
+};
+function inr(n){ const a=Math.abs(n), s=n<0?'-':''; if(a>=1e7) return s+'\u20B9'+(a/1e7).toFixed(2)+' Cr'; if(a>=1e5) return s+'\u20B9'+(a/1e5).toFixed(2)+' L'; return s+'\u20B9'+Math.round(a).toLocaleString('en-IN'); }
+function band(v,good,warn,higherWorse=true){ if(higherWorse) return v<good?'g':v<warn?'w':'b'; return v>good?'g':v>warn?'w':'b'; }
+
+const gross=sum(position.assets.map(a=>a.value));
+const debt=sum(position.loans.map(l=>l.outstanding));
+const liquid=sum(position.assets.filter(a=>a.liquid).map(a=>a.value));
+const reIds=new Set(position.assets.filter(a=>a.assetClass==='real_estate').map(a=>a.id));
+const reVal=sum(position.assets.filter(a=>reIds.has(a.id)).map(a=>a.value));
+const reDebt=sum(position.loans.filter(l=>reIds.has(l.securedAgainstAssetId)).map(l=>l.outstanding));
+const emi=sum(position.loans.map(l=>l.emiMonthly));
+const outflow=emi+position.expenses.monthlyEssential;
+const topAsset=[...position.assets].sort((a,b)=>b.value-a.value)[0];
+
+document.getElementById('nw').textContent=inr(gross-debt);
+document.getElementById('gross').textContent=inr(gross);
+document.getElementById('debt').textContent=inr(debt);
+
+const ltv=reDebt/reVal*100, emiPct=emi/position.income.monthlyTakeHome*100,
+      runway=liquid/outflow, conc=topAsset.value/gross*100, da=debt/gross*100;
+const signals=[
+  {label:'Real-estate LTV', val:ltv.toFixed(0)+'%', sev:band(ltv,60,80), msg:`You've borrowed ${ltv.toFixed(0)}% of your property's value.`},
+  {label:'EMI vs income', val:emiPct.toFixed(0)+'%', sev:band(emiPct,30,40), msg:`EMIs take ${emiPct.toFixed(0)}% of your take-home pay.`},
+  {label:'Emergency runway', val:runway.toFixed(1)+' mo', sev:band(runway,6,3,false), msg:`Liquid savings cover ${runway.toFixed(1)} months of EMIs and essentials.`},
+  {label:'Largest asset', val:conc.toFixed(0)+'%', sev:band(conc,40,60), msg:`${topAsset.name} is ${conc.toFixed(0)}% of everything you own.`},
+  {label:'Debt vs assets', val:da.toFixed(0)+'%', sev:band(da,40,60), msg:`${da.toFixed(0)}% of your assets are funded by debt.`},
+];
+document.getElementById('signals').innerHTML = signals.map(s=>`
+  <div class="card ${s.sev}">
+    <span class="dot"></span>
+    <div class="body">
+      <div class="top"><span class="label">${s.label}</span><span class="val">${s.val}</span></div>
+      <div class="msg">${s.msg}</div>
+    </div>
+  </div>`).join('');
+</script>
+</body>
+</html>

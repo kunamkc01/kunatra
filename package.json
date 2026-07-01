@@ -1,0 +1,13 @@
+{
+  "name": "atlas",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Atlas — see what you own, what you owe, and whether you're overextended.",
+  "workspaces": ["packages/*", "apps/*"],
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "demo": "node --experimental-strip-types packages/engine/src/demo.ts",
+    "test": "node --experimental-strip-types --test packages/engine/src/engine.test.ts",
+    "api": "node --experimental-strip-types apps/api/src/index.ts"
+  }
+}

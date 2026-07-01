@@ -1,0 +1,22 @@
+{
+  "name": "@atlas/engine",
+  "version": "0.1.0",
+  "description": "Net-worth and overextension engine — the descriptive core of ATLAS.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --experimental-strip-types --test src/engine.test.ts",
+    "demo": "node --experimental-strip-types src/demo.ts"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}
