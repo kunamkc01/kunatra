@@ -291,6 +291,88 @@ export async function deleteValuation(id: string) {
   }
 }
 
+// ---- contributions ledger (drives XIRR) -----------------------------------
+
+/** Signed rupee amount (contributions may be negative = withdrawals). */
+function signedMoney(v: unknown, field: string): number {
+  const n = Number(v);
+  if (v == null || v === '' || !Number.isFinite(n) || n === 0) {
+    throw new HttpError(400, 'invalid_input', `${field} must be a non-zero number`);
+  }
+  return n;
+}
+
+const contributionRow = (r: any) => ({
+  id: r.id, assetId: r.asset_id, amount: paiseToRupees(r.amount_paise), on: r.contributed_on, note: r.note ?? null,
+});
+
+export async function listContributions(assetId: string) {
+  const { rows } = await db().query(
+    `SELECT * FROM contributions WHERE asset_id = $1 ORDER BY contributed_on ASC, id ASC`, [assetId]);
+  return rows.map(contributionRow);
+}
+
+export async function addContribution(assetId: string, body: any) {
+  const amount = signedMoney(body.amount, 'amount');
+  const on = dateStr(body.on, 'on', { required: true })!;
+  const { rows } = await db().query(
+    `INSERT INTO contributions (asset_id, amount_paise, contributed_on, note) VALUES ($1,$2,$3,$4) RETURNING *`,
+    [assetId, rupeesToPaise(amount), on, str(body.note, 'note') ?? null]
+  );
+  return contributionRow(rows[0]);
+}
+
+export async function deleteContribution(id: string) {
+  const { rowCount } = await db().query(`DELETE FROM contributions WHERE id = $1`, [id]);
+  if (rowCount === 0) throw new HttpError(404, 'contribution_not_found');
+}
+
+/** Monthly dates (same day-of-month, clamped) from startOn through untilOn inclusive. */
+function monthlySchedule(startOn: string, untilOn: string): string[] {
+  const [sy, sm, sd] = startOn.split('-').map(Number);
+  const until = new Date(`${untilOn}T00:00:00Z`).getTime();
+  const out: string[] = [];
+  let y = sy;
+  let m = sm;
+  for (let i = 0; i < 1200; i++) {
+    const dim = new Date(Date.UTC(y, m, 0)).getUTCDate(); // last day of month m
+    const day = Math.min(sd, dim);
+    const t = Date.UTC(y, m - 1, day);
+    if (t > until) break;
+    out.push(`${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
+    m++;
+    if (m > 12) { m = 1; y++; }
+  }
+  return out;
+}
+
+/** Generate a recurring SIP as monthly contributions from startOn to today (or `until`). */
+export async function addSipSchedule(assetId: string, body: any) {
+  const amount = signedMoney(body.amount, 'amount');
+  const startOn = dateStr(body.startOn, 'startOn', { required: true })!;
+  const until = dateStr(body.until, 'until') ?? new Date().toISOString().slice(0, 10);
+  const dates = monthlySchedule(startOn, until);
+  if (dates.length === 0) throw new HttpError(400, 'invalid_input', 'startOn is in the future');
+
+  const client = await db().connect();
+  try {
+    await client.query('BEGIN');
+    for (const on of dates) {
+      await client.query(
+        `INSERT INTO contributions (asset_id, amount_paise, contributed_on, note) VALUES ($1,$2,$3,$4)`,
+        [assetId, rupeesToPaise(amount), on, 'SIP']
+      );
+    }
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+  return { added: dates.length };
+}
+
 // ---- loans ----------------------------------------------------------------
 
 const loanRow = (r: any) => ({

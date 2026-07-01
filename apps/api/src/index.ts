@@ -58,7 +58,7 @@ app.delete('/api/households/:id', sameHousehold, ownerOnly, h(async (req, res) =
 
 // ---- assessment (owner only — the net-worth/exposure picture) ------------
 app.get('/api/households/:id/assessment', sameHousehold, ownerOnly, h(async (req, res) => {
-  res.json(assess(await loadPosition(req.params.id)));
+  res.json(assess(await loadPosition(req.params.id), new Date()));
 }));
 
 // ---- assets (owner + operations; delete is an owner decision) ------------
@@ -72,6 +72,12 @@ app.delete('/api/assets/:id', scopeResource('assets'), ownerOnly, h(async (req, 
 app.get('/api/assets/:id/valuations', scopeResource('assets'), h(async (req, res) => res.json(await repo.listValuations(req.params.id))));
 app.post('/api/assets/:id/valuations', scopeResource('assets'), h(async (req, res) => res.status(201).json(await repo.addValuation(req.params.id, req.body))));
 app.delete('/api/valuations/:id', scopeVia('SELECT a.household_id FROM valuations v JOIN assets a ON a.id = v.asset_id WHERE v.id = $1'), h(async (req, res) => { await repo.deleteValuation(req.params.id); res.sendStatus(204); }));
+
+// ---- contributions ledger (drives XIRR; owner + operations) --------------
+app.get('/api/assets/:id/contributions', scopeResource('assets'), h(async (req, res) => res.json(await repo.listContributions(req.params.id))));
+app.post('/api/assets/:id/contributions', scopeResource('assets'), h(async (req, res) => res.status(201).json(await repo.addContribution(req.params.id, req.body))));
+app.post('/api/assets/:id/contributions/schedule', scopeResource('assets'), h(async (req, res) => res.status(201).json(await repo.addSipSchedule(req.params.id, req.body))));
+app.delete('/api/contributions/:id', scopeVia('SELECT a.household_id FROM contributions c JOIN assets a ON a.id = c.asset_id WHERE c.id = $1'), h(async (req, res) => { await repo.deleteContribution(req.params.id); res.sendStatus(204); }));
 
 // ---- loans (owner only — debt is an owner decision) ----------------------
 app.get('/api/households/:id/loans', sameHousehold, ownerOnly, h(async (req, res) => res.json(await repo.listLoans(req.params.id))));

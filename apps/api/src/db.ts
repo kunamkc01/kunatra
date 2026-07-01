@@ -8,7 +8,7 @@ import { pool, paiseToRupees, HttpError } from './pool.ts';
 export async function loadPosition(householdId: string): Promise<Position> {
   if (!pool) throw new HttpError(503, 'no_database', 'DATABASE_URL not set');
 
-  const [assetsR, loansR, hhR] = await Promise.all([
+  const [assetsR, loansR, hhR, contribR] = await Promise.all([
     pool.query(
       `SELECT id, name, asset_class, current_value_paise, liquid, cost_basis_paise, monthly_contribution_paise
          FROM assets WHERE household_id = $1`,
@@ -23,9 +23,22 @@ export async function loadPosition(householdId: string): Promise<Position> {
       `SELECT monthly_take_home_paise, monthly_essential_paise FROM households WHERE id = $1`,
       [householdId]
     ),
+    pool.query(
+      `SELECT c.asset_id, c.amount_paise, c.contributed_on
+         FROM contributions c JOIN assets a ON a.id = c.asset_id
+        WHERE a.household_id = $1`,
+      [householdId]
+    ),
   ]);
 
   if (hhR.rowCount === 0) throw new HttpError(404, 'household_not_found');
+
+  const contribByAsset = new Map<string, { amount: number; on: string }[]>();
+  for (const r of contribR.rows) {
+    const list = contribByAsset.get(r.asset_id) ?? [];
+    list.push({ amount: paiseToRupees(r.amount_paise), on: r.contributed_on });
+    contribByAsset.set(r.asset_id, list);
+  }
 
   const assets: Asset[] = assetsR.rows.map((r) => ({
     id: r.id,
@@ -35,6 +48,7 @@ export async function loadPosition(householdId: string): Promise<Position> {
     liquid: r.liquid,
     costBasis: r.cost_basis_paise != null ? paiseToRupees(r.cost_basis_paise) : undefined,
     monthlyContribution: r.monthly_contribution_paise != null ? paiseToRupees(r.monthly_contribution_paise) : undefined,
+    contributions: contribByAsset.get(r.id),
   }));
 
   const loans: Loan[] = loansR.rows.map((r) => ({

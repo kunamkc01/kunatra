@@ -17,10 +17,22 @@ function band(v: number, good: number, warn: number, higherIsWorse = true): Seve
  * These DESCRIBE; they never recommend an action. That distinction is what
  * keeps the product clear of regulated investment advice.
  */
-export function signals(p: Position): Signal[] {
+export function signals(p: Position, asOf?: Date | string): Signal[] {
   const ex = exposure(p);
-  const inv = investments(p);
+  const inv = investments(p, asOf);
   const out: Signal[] = [];
+
+  if (inv.xirrPct != null) {
+    const v = inv.xirrPct;
+    out.push({
+      key: 'xirr',
+      label: 'Return (XIRR)',
+      value: v,
+      display: `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`,
+      severity: v >= 0 ? 'good' : 'watch',
+      message: `Your investments have returned ${v.toFixed(1)}% a year, accounting for when you put money in.`,
+    });
+  }
 
   if (inv.gainPct != null) {
     const v = inv.gainPct;

@@ -86,6 +86,27 @@ test('investments & appreciation', { skip: hasDb ? false : 'DATABASE_URL not set
       assert.equal((await call('DELETE', `/api/valuations/${june.id}`)).status, 204);
       assert.equal((await call('GET', `/api/assets/${assetId}`)).body.value, 480000);
     });
+
+    await t.test('records a contribution and computes portfolio XIRR', async () => {
+      assert.equal((await call('POST', `/api/assets/${assetId}/contributions`, { amount: 400000, on: '2024-01-01' })).status, 201);
+      const list = (await call('GET', `/api/assets/${assetId}/contributions`)).body;
+      assert.equal(list.length, 1);
+      assert.equal(list[0].amount, 400000);
+      const inv = (await call('GET', `/api/households/${householdId}/assessment`)).body.investments;
+      assert.ok(inv.xirrPct != null && inv.xirrPct > 0); // 400k in 2024 → 480k now = positive
+    });
+
+    await t.test('generates a monthly SIP schedule', async () => {
+      const { status, body } = await call('POST', `/api/assets/${assetId}/contributions/schedule`, { amount: 5000, startOn: '2025-01-01', until: '2025-12-01' });
+      assert.equal(status, 201);
+      assert.equal(body.added, 12); // Jan–Dec 2025
+      const list = (await call('GET', `/api/assets/${assetId}/contributions`)).body;
+      assert.equal(list.length, 13); // 1 lump + 12 monthly
+    });
+
+    await t.test('rejects a non-numeric contribution (400)', async () => {
+      assert.equal((await call('POST', `/api/assets/${assetId}/contributions`, { amount: 0, on: '2025-01-01' })).status, 400);
+    });
   } finally {
     if (householdId) await call('DELETE', `/api/households/${householdId}`);
     await new Promise((r) => server.close(r));

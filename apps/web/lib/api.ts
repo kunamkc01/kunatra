@@ -15,6 +15,14 @@ export interface Valuation {
   source: string | null;
 }
 
+export interface Contribution {
+  id: string;
+  assetId: string;
+  amount: number;
+  on: string;
+  note: string | null;
+}
+
 export interface RealEstate {
   address?: string | null;
   sqft?: number | null;
@@ -191,6 +199,14 @@ export const api = {
   addValuation: (assetId: string, b: { value: number; asOf: string; source?: string }) =>
     req<Valuation>(`/api/assets/${assetId}/valuations`, { method: "POST", body: JSON.stringify(b) }),
   deleteValuation: (valuationId: string) => req<void>(`/api/valuations/${valuationId}`, { method: "DELETE" }),
+
+  // contributions ledger (drives XIRR)
+  listContributions: (assetId: string) => req<Contribution[]>(`/api/assets/${assetId}/contributions`),
+  addContribution: (assetId: string, b: { amount: number; on: string; note?: string }) =>
+    req<Contribution>(`/api/assets/${assetId}/contributions`, { method: "POST", body: JSON.stringify(b) }),
+  addSipSchedule: (assetId: string, b: { amount: number; startOn: string; until?: string }) =>
+    req<{ added: number }>(`/api/assets/${assetId}/contributions/schedule`, { method: "POST", body: JSON.stringify(b) }),
+  deleteContribution: (id: string) => req<void>(`/api/contributions/${id}`, { method: "DELETE" }),
 
   // loans
   listLoans: (id: string) => req<Loan[]>(`/api/households/${id}/loans`),

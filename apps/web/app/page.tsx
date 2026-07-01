@@ -128,6 +128,12 @@ export default function Portfolio() {
                 {inv.monthlyContribution > 0 && (
                   <div className="tile acc"><div className="tl">Monthly investing</div><div className="tv num" style={{ fontSize: 21, marginTop: 4 }}>{inr(inv.monthlyContribution)}<span style={{ fontSize: 12, color: "var(--muted)" }}>/mo</span></div></div>
                 )}
+                {inv.xirrPct != null && (
+                  <div className={`tile ${inv.xirrPct >= 0 ? "g" : "b"}`}>
+                    <div className="tl">Return (XIRR)</div>
+                    <div className="tv num" style={{ fontSize: 21, marginTop: 4 }}>{inv.xirrPct >= 0 ? "+" : ""}{inv.xirrPct.toFixed(1)}%<span style={{ fontSize: 12, color: "var(--muted)" }}>/yr</span></div>
+                  </div>
+                )}
               </div>
             </>
           )}

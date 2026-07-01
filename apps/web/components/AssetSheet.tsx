@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { api, type Asset, type AssetClass, type Valuation } from "@/lib/api";
+import { api, type Asset, type AssetClass, type Valuation, type Contribution } from "@/lib/api";
 import { inr } from "@/lib/format";
 import { Sheet } from "./Sheet";
 
@@ -80,6 +80,42 @@ export function AssetSheet({
     await api.deleteValuation(id);
     loadValuations();
     onChanged?.();
+  }
+
+  // Contribution ledger (edit mode) — drives XIRR.
+  const [contribs, setContribs] = useState<Contribution[]>([]);
+  const [contribAmount, setContribAmount] = useState("");
+  const [contribDate, setContribDate] = useState("");
+  const [sipAmount, setSipAmount] = useState("");
+  const [sipStart, setSipStart] = useState("");
+  const [contribBusy, setContribBusy] = useState(false);
+
+  const loadContribs = () => { if (existing) api.listContributions(existing.id).then(setContribs).catch(() => {}); };
+  useEffect(loadContribs, [existing?.id]);
+
+  async function addContribution() {
+    if (!existing || !contribAmount || !contribDate) return;
+    setContribBusy(true);
+    try {
+      await api.addContribution(existing.id, { amount: Number(contribAmount), on: contribDate });
+      setContribAmount(""); setContribDate(""); loadContribs(); onChanged?.();
+    } catch (e: any) { setErr(e.message ?? "Could not add contribution"); }
+    finally { setContribBusy(false); }
+  }
+
+  async function generateSip() {
+    if (!existing || !sipAmount || !sipStart) return;
+    setContribBusy(true);
+    try {
+      const r = await api.addSipSchedule(existing.id, { amount: Number(sipAmount), startOn: sipStart });
+      setSipAmount(""); setSipStart(""); loadContribs(); onChanged?.();
+      alert(`Added ${r.added} monthly contributions.`);
+    } catch (e: any) { setErr(e.message ?? "Could not generate schedule"); }
+    finally { setContribBusy(false); }
+  }
+
+  async function removeContribution(id: string) {
+    await api.deleteContribution(id); loadContribs(); onChanged?.();
   }
 
   function changeClass(c: AssetClass) {
@@ -227,6 +263,51 @@ export function AssetSheet({
               <button className="btn ghost small danger" type="button" onClick={() => removeValuation(v.id)}>✕</button>
             </div>
           ))}
+        </div>
+      )}
+
+      {existing && (
+        <div style={{ marginTop: 18, borderTop: "1px solid var(--line)", paddingTop: 14 }}>
+          <div className="sec-label" style={{ margin: "0 0 4px" }}>Contributions (for XIRR)</div>
+          <div className="hint" style={{ marginBottom: 8 }}>Dated money in/out powers your annualized return. Use the SIP generator for recurring investments.</div>
+          <div className="row2">
+            <div className="field" style={{ marginBottom: 6 }}>
+              <label>Amount (₹)</label>
+              <input inputMode="numeric" value={contribAmount} onChange={(e) => setContribAmount(e.target.value)} placeholder="100000 (− to withdraw)" />
+            </div>
+            <div className="field" style={{ marginBottom: 6 }}>
+              <label>On</label>
+              <input type="date" value={contribDate} onChange={(e) => setContribDate(e.target.value)} />
+            </div>
+          </div>
+          <div className="actions" style={{ marginBottom: 10 }}>
+            <button className="btn small" type="button" onClick={addContribution} disabled={contribBusy || !contribAmount || !contribDate}>Add contribution</button>
+          </div>
+
+          <div className="row2">
+            <div className="field" style={{ marginBottom: 6 }}>
+              <label>SIP amount /mo (₹)</label>
+              <input inputMode="numeric" value={sipAmount} onChange={(e) => setSipAmount(e.target.value)} placeholder="15000" />
+            </div>
+            <div className="field" style={{ marginBottom: 6 }}>
+              <label>Starting</label>
+              <input type="date" value={sipStart} onChange={(e) => setSipStart(e.target.value)} />
+            </div>
+          </div>
+          <div className="actions" style={{ marginBottom: 8 }}>
+            <button className="btn small" type="button" onClick={generateSip} disabled={contribBusy || !sipAmount || !sipStart}>Generate monthly SIP → today</button>
+          </div>
+
+          {contribs.length === 0 && <div className="hint">No contributions recorded yet.</div>}
+          {contribs.length > 0 && <div className="hint" style={{ marginBottom: 4 }}>{contribs.length} contribution{contribs.length === 1 ? "" : "s"}</div>}
+          {contribs.slice(0, 6).map((c) => (
+            <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, padding: "4px 0", borderBottom: "1px solid var(--line)" }}>
+              <span className="tnum" style={{ color: c.amount < 0 ? "var(--good)" : "var(--ink)" }}>{c.amount < 0 ? "−" : ""}{inr(Math.abs(c.amount))}</span>
+              <span className="muted" style={{ fontSize: 12 }}>{c.on}{c.note ? ` · ${c.note}` : ""}</span>
+              <button className="btn ghost small danger" type="button" onClick={() => removeContribution(c.id)}>✕</button>
+            </div>
+          ))}
+          {contribs.length > 6 && <div className="hint" style={{ marginTop: 4 }}>…and {contribs.length - 6} more</div>}
         </div>
       )}
     </Sheet>

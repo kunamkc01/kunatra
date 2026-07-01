@@ -29,6 +29,8 @@ export interface Asset {
   costBasis?: number;
   /** Recurring monthly contribution (SIP/RD/PPF/EPF/NPS…), in rupees. Optional. */
   monthlyContribution?: number;
+  /** Dated cash flows for return maths. amount>0 = invested, amount<0 = withdrawn (rupees). */
+  contributions?: { amount: number; on: string }[];
 }
 
 export interface Loan {
@@ -112,6 +114,8 @@ export interface Investments {
   monthlyContribution: number;
   /** How many assets have a recurring contribution. */
   contributingCount: number;
+  /** Annualized money-weighted return (XIRR) across dated contributions, percent. Null if not computable. */
+  xirrPct: number | null;
 }
 
 export interface Assessment {

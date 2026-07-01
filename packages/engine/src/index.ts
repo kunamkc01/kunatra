@@ -8,12 +8,17 @@ export * from './types.ts';
 export { netWorth } from './networth.ts';
 export { exposure } from './exposure.ts';
 export { investments } from './investments.ts';
+export { xirr } from './xirr.ts';
 export { signals } from './signals.ts';
 export { formatINR } from './format.ts';
 
-/** Run the full assessment: net worth, exposure, investments and descriptive signals. */
-export function assess(p: Position): Assessment {
-  return { netWorth: netWorth(p), exposure: exposure(p), investments: investments(p), signals: signals(p) };
+/**
+ * Run the full assessment: net worth, exposure, investments and descriptive signals.
+ * `asOf` (today) anchors the terminal value for XIRR; pass it from the caller so the
+ * engine stays pure. Omit it and XIRR is simply null.
+ */
+export function assess(p: Position, asOf?: Date | string): Assessment {
+  return { netWorth: netWorth(p), exposure: exposure(p), investments: investments(p, asOf), signals: signals(p, asOf) };
 }
 
 /** A representative salaried-professional position for demos and tests. */
@@ -22,7 +27,7 @@ export const salariedSample: Position = {
     { id: 'flat', name: 'Home (2BHK)', assetClass: 'real_estate', value: 8_500_000, liquid: false },
     { id: 'epf', name: 'EPF', assetClass: 'epf', value: 900_000, liquid: false },
     { id: 'ppf', name: 'PPF', assetClass: 'ppf', value: 400_000, liquid: false },
-    { id: 'mf', name: 'Equity mutual funds (SIP)', assetClass: 'mutual_fund', value: 500_000, liquid: true, costBasis: 400_000, monthlyContribution: 15_000 },
+    { id: 'mf', name: 'Equity mutual funds (SIP)', assetClass: 'mutual_fund', value: 500_000, liquid: true, costBasis: 400_000, monthlyContribution: 15_000, contributions: [{ amount: 400_000, on: '2024-01-01' }] },
     { id: 'cash', name: 'Savings', assetClass: 'cash', value: 400_000, liquid: true },
     { id: 'gold', name: 'Gold', assetClass: 'gold', value: 300_000, liquid: false },
     { id: 'lic', name: 'LIC policy', assetClass: 'insurance', value: 200_000, liquid: false },

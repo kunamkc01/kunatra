@@ -76,7 +76,7 @@ open apps/web/prototype/wedge.html   # the static prototype the web app is built
 ```
 
 ## What's here vs what's next
-**Here:** the engine (the hard, durable part — net worth, LTV, EMI strain, runway, concentration, unrealized gain, with descriptive signals), the data model + schema, a full API (households, assets with real-estate profile + cost basis + recurring contributions + dated valuations, and loans — CRUD over the engine), **login & roles** (owner vs operations), an **asset-operations module** (work orders with a lifecycle + cost-at-closure gate, vendors, inspections — Tier 2, narrowed), and the **Next.js web app** at `apps/web`: the portfolio mirror (net worth, exposure, investments/appreciation), fast manual entry, and an operations screen — in the family-office console UI.
+**Here:** the engine (the hard, durable part — net worth, LTV, EMI strain, runway, concentration, unrealized gain, XIRR, with descriptive signals), the data model + schema, a full API (households, assets with real-estate profile + cost basis + recurring contributions + dated valuations + a contribution ledger, and loans — CRUD over the engine), **login & roles** (owner vs operations), an **asset-operations module** (work orders with a lifecycle + cost-at-closure gate, vendors, inspections — Tier 2, narrowed), and the **Next.js web app** at `apps/web`: the portfolio mirror (net worth, exposure, investments/appreciation/returns), fast manual entry, and an operations screen — in the family-office console UI.
 
 **Next:** see `ROADMAP.md` — validate with real users, then Account Aggregator integration and multi-tenant hardening.
 
