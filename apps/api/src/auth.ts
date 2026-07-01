@@ -212,3 +212,18 @@ export function scopeResource(table: string) {
     }
   };
 }
+
+/** Like scopeResource but for resources reached via a join (sql must select household_id for :id). */
+export function scopeVia(sql: string) {
+  return async (req: Request, _res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) throw new HttpError(401, 'unauthenticated');
+      const { rows } = await db().query(sql, [req.params.id]);
+      if (rows.length === 0) throw new HttpError(404, 'not_found');
+      if (rows[0].household_id !== req.user.householdId) throw new HttpError(403, 'forbidden');
+      next();
+    } catch (e) {
+      next(e);
+    }
+  };
+}

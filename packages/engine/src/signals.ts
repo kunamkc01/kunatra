@@ -1,5 +1,6 @@
 import type { Position, Signal, Severity } from './types.ts';
 import { exposure } from './exposure.ts';
+import { investments } from './investments.ts';
 
 /**
  * Band a metric into good / watch / warning.
@@ -18,7 +19,32 @@ function band(v: number, good: number, warn: number, higherIsWorse = true): Seve
  */
 export function signals(p: Position): Signal[] {
   const ex = exposure(p);
+  const inv = investments(p);
   const out: Signal[] = [];
+
+  if (inv.gainPct != null) {
+    const v = inv.gainPct;
+    out.push({
+      key: 'appreciation',
+      label: 'Investment gain',
+      value: v,
+      display: `${v >= 0 ? '+' : ''}${v.toFixed(0)}%`,
+      severity: v >= 0 ? 'good' : 'watch',
+      message: `Your invested assets are worth ${Math.abs(v).toFixed(0)}% ${v >= 0 ? 'more' : 'less'} than you put in.`,
+    });
+  }
+
+  if (inv.monthlyContribution > 0 && p.income?.monthlyTakeHome) {
+    const v = (inv.monthlyContribution / p.income.monthlyTakeHome) * 100;
+    out.push({
+      key: 'savings_rate',
+      label: 'Monthly investing',
+      value: v,
+      display: `${v.toFixed(0)}%`,
+      severity: v >= 20 ? 'good' : v >= 10 ? 'watch' : 'warning',
+      message: `You put ${v.toFixed(0)}% of your take-home into recurring investments each month.`,
+    });
+  }
 
   if (ex.realEstateLTV != null) {
     const v = ex.realEstateLTV;

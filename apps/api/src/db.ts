@@ -10,7 +10,8 @@ export async function loadPosition(householdId: string): Promise<Position> {
 
   const [assetsR, loansR, hhR] = await Promise.all([
     pool.query(
-      `SELECT id, name, asset_class, current_value_paise, liquid FROM assets WHERE household_id = $1`,
+      `SELECT id, name, asset_class, current_value_paise, liquid, cost_basis_paise, monthly_contribution_paise
+         FROM assets WHERE household_id = $1`,
       [householdId]
     ),
     pool.query(
@@ -32,6 +33,8 @@ export async function loadPosition(householdId: string): Promise<Position> {
     assetClass: r.asset_class as AssetClass,
     value: paiseToRupees(r.current_value_paise),
     liquid: r.liquid,
+    costBasis: r.cost_basis_paise != null ? paiseToRupees(r.cost_basis_paise) : undefined,
+    monthlyContribution: r.monthly_contribution_paise != null ? paiseToRupees(r.monthly_contribution_paise) : undefined,
   }));
 
   const loans: Loan[] = loansR.rows.map((r) => ({

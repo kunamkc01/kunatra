@@ -161,7 +161,7 @@ export default function Assets() {
       </div>
 
       {assetSheet.open && hhId && (
-        <AssetSheet householdId={hhId} existing={assetSheet.edit} onClose={() => setAssetSheet({ open: false })} onSaved={() => { setAssetSheet({ open: false }); refresh(); }} />
+        <AssetSheet householdId={hhId} existing={assetSheet.edit} onClose={() => setAssetSheet({ open: false })} onSaved={() => { setAssetSheet({ open: false }); refresh(); }} onChanged={refresh} />
       )}
       {loanSheet.open && hhId && (
         <LoanSheet householdId={hhId} existing={loanSheet.edit} assets={assets} onClose={() => setLoanSheet({ open: false })} onSaved={() => { setLoanSheet({ open: false }); refresh(); }} />

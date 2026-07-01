@@ -40,6 +40,7 @@ export default function Portfolio() {
 
   const nw = assessment?.netWorth;
   const ex = assessment?.exposure;
+  const inv = assessment?.investments;
   const signals = assessment?.signals ?? [];
   const hasData = nw && (nw.grossAssets > 0 || nw.totalDebt > 0);
   const byKey = (k: string) => signals.find((s) => s.key === k);
@@ -110,6 +111,26 @@ export default function Portfolio() {
               </span>
             ))}
           </div>
+
+          {inv && (inv.invested > 0 || inv.monthlyContribution > 0) && (
+            <>
+              <div className="label" style={{ margin: "18px 0 8px" }}>Investments</div>
+              <div className="tiles">
+                <div className="tile"><div className="tl">Invested</div><div className="tv num" style={{ fontSize: 21, marginTop: 4 }}>{inr(inv.invested)}</div></div>
+                <div className="tile"><div className="tl">Current value</div><div className="tv num" style={{ fontSize: 21, marginTop: 4 }}>{inr(inv.currentValue)}</div></div>
+                <div className={`tile ${inv.unrealizedGain >= 0 ? "g" : "b"}`}>
+                  <div className="tl">Unrealized gain</div>
+                  <div className="tv num" style={{ fontSize: 21, marginTop: 4 }}>
+                    {inv.unrealizedGain >= 0 ? "+" : "−"}{inr(Math.abs(inv.unrealizedGain))}
+                    {inv.gainPct != null ? <span style={{ fontSize: 13 }}> · {inv.gainPct >= 0 ? "+" : ""}{inv.gainPct.toFixed(0)}%</span> : null}
+                  </div>
+                </div>
+                {inv.monthlyContribution > 0 && (
+                  <div className="tile acc"><div className="tl">Monthly investing</div><div className="tv num" style={{ fontSize: 21, marginTop: 4 }}>{inr(inv.monthlyContribution)}<span style={{ fontSize: 12, color: "var(--muted)" }}>/mo</span></div></div>
+                )}
+              </div>
+            </>
+          )}
 
           {/* Holdings — assets netted against the loans secured on them */}
           <div className="scroll" style={{ marginTop: 18 }}>

@@ -4,8 +4,16 @@ import type { Assessment } from "@atlas/engine";
 const BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:4100";
 
 export type AssetClass =
-  | "real_estate" | "mutual_fund" | "sip" | "equity" | "epf"
-  | "ppf" | "cash" | "gold" | "insurance" | "other";
+  | "real_estate" | "mutual_fund" | "sip" | "equity" | "epf" | "ppf"
+  | "nps" | "fd" | "rd" | "bonds" | "cash" | "gold" | "insurance" | "other";
+
+export interface Valuation {
+  id: string;
+  assetId: string;
+  value: number;
+  asOf: string;
+  source: string | null;
+}
 
 export interface RealEstate {
   address?: string | null;
@@ -24,6 +32,8 @@ export interface Asset {
   value: number;
   liquid: boolean;
   parentAssetId: string | null;
+  costBasis: number | null;
+  monthlyContribution: number | null;
   realEstate: RealEstate | null;
 }
 
@@ -175,6 +185,12 @@ export const api = {
   updateAsset: (assetId: string, b: Partial<Asset>) =>
     req<Asset>(`/api/assets/${assetId}`, { method: "PATCH", body: JSON.stringify(b) }),
   deleteAsset: (assetId: string) => req<void>(`/api/assets/${assetId}`, { method: "DELETE" }),
+
+  // valuations (appreciation history)
+  listValuations: (assetId: string) => req<Valuation[]>(`/api/assets/${assetId}/valuations`),
+  addValuation: (assetId: string, b: { value: number; asOf: string; source?: string }) =>
+    req<Valuation>(`/api/assets/${assetId}/valuations`, { method: "POST", body: JSON.stringify(b) }),
+  deleteValuation: (valuationId: string) => req<void>(`/api/valuations/${valuationId}`, { method: "DELETE" }),
 
   // loans
   listLoans: (id: string) => req<Loan[]>(`/api/households/${id}/loans`),

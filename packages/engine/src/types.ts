@@ -8,6 +8,10 @@ export type AssetClass =
   | 'equity'
   | 'epf'
   | 'ppf'
+  | 'nps'
+  | 'fd'
+  | 'rd'
+  | 'bonds'
   | 'cash'
   | 'gold'
   | 'insurance'
@@ -17,10 +21,14 @@ export interface Asset {
   id: string;
   name: string;
   assetClass: AssetClass;
-  /** Current value in rupees. */
+  /** Current value in rupees (the latest valuation). */
   value: number;
   /** Convertible to cash within ~a week without material loss. */
   liquid: boolean;
+  /** Total amount invested to date, in rupees. Drives unrealized gain. Optional. */
+  costBasis?: number;
+  /** Recurring monthly contribution (SIP/RD/PPF/EPF/NPS…), in rupees. Optional. */
+  monthlyContribution?: number;
 }
 
 export interface Loan {
@@ -90,8 +98,25 @@ export interface Exposure {
   topConcentration: { name: string; pct: number } | null;
 }
 
+/** Appreciation & recurring-investing picture, derived from cost basis and contributions. */
+export interface Investments {
+  /** Sum of cost basis across assets that have one recorded, in rupees. */
+  invested: number;
+  /** Current value of those same assets, in rupees. */
+  currentValue: number;
+  /** currentValue − invested (unrealized), in rupees. */
+  unrealizedGain: number;
+  /** Gain as a percent of invested. Null if nothing invested. */
+  gainPct: number | null;
+  /** Total recurring monthly contribution across assets, in rupees. */
+  monthlyContribution: number;
+  /** How many assets have a recurring contribution. */
+  contributingCount: number;
+}
+
 export interface Assessment {
   netWorth: NetWorth;
   exposure: Exposure;
+  investments: Investments;
   signals: Signal[];
 }

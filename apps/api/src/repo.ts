@@ -4,7 +4,7 @@ import { db, rupeesToPaise, paiseToRupees, HttpError } from './pool.ts';
 // ---- shared validation helpers -------------------------------------------
 
 const ASSET_CLASSES: AssetClass[] = [
-  'real_estate', 'mutual_fund', 'sip', 'equity', 'epf', 'ppf', 'cash', 'gold', 'insurance', 'other',
+  'real_estate', 'mutual_fund', 'sip', 'equity', 'epf', 'ppf', 'nps', 'fd', 'rd', 'bonds', 'cash', 'gold', 'insurance', 'other',
 ];
 
 function str(v: unknown, field: string, { required = false } = {}): string | undefined {
@@ -106,6 +106,8 @@ const assetRow = (r: any) => ({
   value: paiseToRupees(r.current_value_paise),
   liquid: r.liquid,
   parentAssetId: r.parent_asset_id ?? null,
+  costBasis: r.cost_basis_paise != null ? paiseToRupees(r.cost_basis_paise) : null,
+  monthlyContribution: r.monthly_contribution_paise != null ? paiseToRupees(r.monthly_contribution_paise) : null,
   realEstate: r.address != null || r.ptin != null || r.sqft != null
     ? {
         address: r.address ?? null,
@@ -153,14 +155,18 @@ export async function createAsset(householdId: string, body: any) {
   const cls = assetClass(body.assetClass);
   const value = money(body.value, 'value', { required: true })!;
   const liquid = bool(body.liquid) ?? false;
+  const costBasis = money(body.costBasis, 'costBasis');
+  const monthly = money(body.monthlyContribution, 'monthlyContribution');
 
   const client = await db().connect();
   try {
     await client.query('BEGIN');
     const { rows } = await client.query(
-      `INSERT INTO assets (household_id, name, asset_class, current_value_paise, liquid)
-       VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-      [householdId, name, cls, rupeesToPaise(value), liquid]
+      `INSERT INTO assets (household_id, name, asset_class, current_value_paise, liquid, cost_basis_paise, monthly_contribution_paise)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+      [householdId, name, cls, rupeesToPaise(value), liquid,
+       costBasis != null ? rupeesToPaise(costBasis) : null,
+       monthly != null ? rupeesToPaise(monthly) : null]
     );
     const id = rows[0].id;
     if (cls === 'real_estate' && body.realEstate) await upsertRealEstate(client, id, body.realEstate);
@@ -184,6 +190,8 @@ export async function updateAsset(id: string, body: any) {
   if ('assetClass' in body) push('asset_class', assetClass(body.assetClass));
   if ('value' in body) push('current_value_paise', rupeesToPaise(money(body.value, 'value', { required: true })!));
   if ('liquid' in body) push('liquid', Boolean(body.liquid));
+  if ('costBasis' in body) { const m = money(body.costBasis, 'costBasis'); push('cost_basis_paise', m != null ? rupeesToPaise(m) : null); }
+  if ('monthlyContribution' in body) { const m = money(body.monthlyContribution, 'monthlyContribution'); push('monthly_contribution_paise', m != null ? rupeesToPaise(m) : null); }
 
   const client = await db().connect();
   try {
@@ -207,6 +215,80 @@ export async function updateAsset(id: string, body: any) {
 export async function deleteAsset(id: string) {
   const { rowCount } = await db().query(`DELETE FROM assets WHERE id = $1`, [id]);
   if (rowCount === 0) throw new HttpError(404, 'asset_not_found');
+}
+
+// ---- valuations (appreciation over time) ----------------------------------
+
+function dateStr(v: unknown, field: string, { required = false } = {}): string | null {
+  if (v == null || v === '') {
+    if (required) throw new HttpError(400, 'invalid_input', `${field} is required`);
+    return null;
+  }
+  const s = String(v);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) throw new HttpError(400, 'invalid_input', `${field} must be a date (YYYY-MM-DD)`);
+  return s;
+}
+
+const valuationRow = (r: any) => ({
+  id: r.id, assetId: r.asset_id, value: paiseToRupees(r.value_paise), asOf: r.as_of, source: r.source ?? null,
+});
+
+export async function listValuations(assetId: string) {
+  const { rows } = await db().query(
+    `SELECT * FROM valuations WHERE asset_id = $1 ORDER BY as_of DESC, id DESC`, [assetId]);
+  return rows.map(valuationRow);
+}
+
+/** Record a dated valuation; the latest (by date) becomes the asset's current value. */
+export async function addValuation(assetId: string, body: any) {
+  const value = money(body.value, 'value', { required: true })!;
+  const asOf = dateStr(body.asOf, 'asOf', { required: true })!;
+  const client = await db().connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      `INSERT INTO valuations (asset_id, value_paise, as_of, source) VALUES ($1,$2,$3,$4) RETURNING *`,
+      [assetId, rupeesToPaise(value), asOf, str(body.source, 'source') ?? null]
+    );
+    // Latest valuation drives current value.
+    await client.query(
+      `UPDATE assets SET current_value_paise = (
+         SELECT value_paise FROM valuations WHERE asset_id = $1 ORDER BY as_of DESC, id DESC LIMIT 1
+       ) WHERE id = $1`,
+      [assetId]
+    );
+    await client.query('COMMIT');
+    return valuationRow(rows[0]);
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+export async function deleteValuation(id: string) {
+  const client = await db().connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(`DELETE FROM valuations WHERE id = $1 RETURNING asset_id`, [id]);
+    if (rows.length === 0) throw new HttpError(404, 'valuation_not_found');
+    const assetId = rows[0].asset_id;
+    // Fall back to the next latest valuation, if any.
+    await client.query(
+      `UPDATE assets SET current_value_paise = COALESCE(
+         (SELECT value_paise FROM valuations WHERE asset_id = $1 ORDER BY as_of DESC, id DESC LIMIT 1),
+         current_value_paise
+       ) WHERE id = $1`,
+      [assetId]
+    );
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
 }
 
 // ---- loans ----------------------------------------------------------------

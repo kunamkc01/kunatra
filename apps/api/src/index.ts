@@ -40,7 +40,7 @@ app.use((req, res, next) => {
   return auth.authenticate(req, res, next);
 });
 
-const { requireRole, sameHousehold, scopeResource } = auth;
+const { requireRole, sameHousehold, scopeResource, scopeVia } = auth;
 const ownerOnly = requireRole('owner');
 
 // ---- current user ---------------------------------------------------------
@@ -67,6 +67,11 @@ app.post('/api/households/:id/assets', sameHousehold, h(async (req, res) => res.
 app.get('/api/assets/:id', scopeResource('assets'), h(async (req, res) => res.json(await repo.getAsset(req.params.id))));
 app.patch('/api/assets/:id', scopeResource('assets'), h(async (req, res) => res.json(await repo.updateAsset(req.params.id, req.body))));
 app.delete('/api/assets/:id', scopeResource('assets'), ownerOnly, h(async (req, res) => { await repo.deleteAsset(req.params.id); res.sendStatus(204); }));
+
+// ---- valuations (appreciation history; owner + operations keep values fresh) ----
+app.get('/api/assets/:id/valuations', scopeResource('assets'), h(async (req, res) => res.json(await repo.listValuations(req.params.id))));
+app.post('/api/assets/:id/valuations', scopeResource('assets'), h(async (req, res) => res.status(201).json(await repo.addValuation(req.params.id, req.body))));
+app.delete('/api/valuations/:id', scopeVia('SELECT a.household_id FROM valuations v JOIN assets a ON a.id = v.asset_id WHERE v.id = $1'), h(async (req, res) => { await repo.deleteValuation(req.params.id); res.sendStatus(204); }));
 
 // ---- loans (owner only — debt is an owner decision) ----------------------
 app.get('/api/households/:id/loans', sameHousehold, ownerOnly, h(async (req, res) => res.json(await repo.listLoans(req.params.id))));
