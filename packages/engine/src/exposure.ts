@@ -20,6 +20,7 @@ export function exposure(p: Position): Exposure {
   const income = p.income?.monthlyTakeHome ?? null;
   const essential = p.expenses?.monthlyEssential ?? 0;
   const monthlyOutflow = totalEmi + essential;
+  const monthlyRent = sum(p.assets.map((a) => a.monthlyRent ?? 0));
 
   const top = [...p.assets].sort((a, b) => b.value - a.value)[0];
 
@@ -29,6 +30,8 @@ export function exposure(p: Position): Exposure {
     realEstateLTV: realEstateValue ? (realEstateDebt / realEstateValue) * 100 : null,
     debtToAssets: grossAssets ? (totalDebt / grossAssets) * 100 : 0,
     emiToIncome: income ? (totalEmi / income) * 100 : null,
+    monthlyRent,
+    dscr: totalEmi > 0 ? monthlyRent / totalEmi : null,
     runwayMonths: monthlyOutflow > 0 ? liquid / monthlyOutflow : null,
     topConcentration:
       top && grossAssets ? { name: top.name, pct: (top.value / grossAssets) * 100 } : null,

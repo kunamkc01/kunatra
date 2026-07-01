@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import type { Assessment, Signal } from "@atlas/engine";
-import { api, type Household, type Asset, type Loan, type OperationsSummary, type MemberAssessment } from "@/lib/api";
+import { api, type Household, type Asset, type Loan, type OperationsSummary, type MemberAssessment, type ComplianceSummary } from "@/lib/api";
 import { useAuth } from "@/lib/useAuth";
 import { inr, assetClassLabel } from "@/lib/format";
 import { Shell } from "@/components/Shell";
@@ -19,15 +19,16 @@ export default function Portfolio() {
   const [loans, setLoans] = useState<Loan[]>([]);
   const [ops, setOps] = useState<OperationsSummary | null>(null);
   const [memberViews, setMemberViews] = useState<MemberAssessment[]>([]);
+  const [comp, setComp] = useState<ComplianceSummary | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   const load = useCallback(async (id: string) => {
     setErr(null);
     try {
-      const [hh, a, list, ln, o, mv] = await Promise.all([
-        api.getHousehold(id), api.assessment(id), api.listAssets(id), api.listLoans(id), api.operationsSummary(id), api.memberAssessments(id),
+      const [hh, a, list, ln, o, mv, c] = await Promise.all([
+        api.getHousehold(id), api.assessment(id), api.listAssets(id), api.listLoans(id), api.operationsSummary(id), api.memberAssessments(id), api.complianceSummary(id),
       ]);
-      setHousehold(hh); setAssessment(a); setAssets(list); setLoans(ln); setOps(o); setMemberViews(mv);
+      setHousehold(hh); setAssessment(a); setAssets(list); setLoans(ln); setOps(o); setMemberViews(mv); setComp(c);
     } catch (e: any) {
       setErr(e.message ?? "Could not load your data");
     }
@@ -104,6 +105,9 @@ export default function Portfolio() {
             ) : ex?.runwayMonths != null ? (
               <div className={`tile ${tileClass(byKey("runway")?.severity)}`}><div className="tl">Emergency runway</div><div className="tv num" style={{ fontSize: 21, marginTop: 4 }}>{ex.runwayMonths.toFixed(1)} mo</div></div>
             ) : null}
+            {ex?.dscr != null && (
+              <div className={`tile ${tileClass(byKey("dscr")?.severity)}`}><div className="tl">Rent vs EMI (DSCR)</div><div className="tv num" style={{ fontSize: 21, marginTop: 4 }}>{ex.dscr.toFixed(2)}×</div></div>
+            )}
           </div>
 
           {/* Allocation */}
@@ -211,6 +215,14 @@ export default function Portfolio() {
             <div className="strip acc">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M14 6l4 4M3 21l4-1 11-11-3-3L4 17l-1 4z" /></svg>
               {ops.workOrders.active} open work order{ops.workOrders.active === 1 ? "" : "s"} · {inr(ops.maintenanceSpendYtd)} maintenance YTD — see <Link href="/operations" style={{ color: "var(--accent)", fontWeight: 600 }}>Operations</Link>.
+            </div>
+          )}
+
+          {comp && (comp.overdue > 0 || comp.dueSoon > 0) && (
+            <div className={`strip ${comp.overdue > 0 ? "bad" : "warn"}`}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></svg>
+              {comp.overdue > 0 ? `${comp.overdue} compliance item${comp.overdue === 1 ? "" : "s"} overdue` : `${comp.dueSoon} due within 30 days`}
+              {comp.next ? ` · next: ${comp.next.title} (${comp.next.dueOn})` : ""} — see <Link href="/operations" style={{ color: "var(--accent)", fontWeight: 600 }}>Operations</Link>.
             </div>
           )}
         </>

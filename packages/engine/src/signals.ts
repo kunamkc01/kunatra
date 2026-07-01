@@ -70,6 +70,18 @@ export function signals(p: Position, asOf?: Date | string): Signal[] {
     });
   }
 
+  if (ex.dscr != null && ex.monthlyRent > 0) {
+    const v = ex.dscr;
+    out.push({
+      key: 'dscr',
+      label: 'Rent vs EMI',
+      value: v,
+      display: `${v.toFixed(2)}×`,
+      severity: band(v, 1.2, 1.0, false),
+      message: `Your rent covers ${v.toFixed(2)}× of your EMIs.`,
+    });
+  }
+
   if (ex.emiToIncome != null) {
     const v = ex.emiToIncome;
     out.push({

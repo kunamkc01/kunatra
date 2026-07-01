@@ -60,7 +60,41 @@ export interface Asset {
   memberId: string | null;
   costBasis: number | null;
   monthlyContribution: number | null;
+  monthlyRent: number | null;
   realEstate: RealEstate | null;
+}
+
+export type ComplianceKind = "property_tax" | "insurance" | "amc" | "inspection" | "renewal" | "other";
+export type Recurrence = "none" | "monthly" | "quarterly" | "yearly";
+
+export interface ComplianceItem {
+  id: string;
+  householdId: string;
+  assetId: string | null;
+  assetName: string | null;
+  title: string;
+  kind: ComplianceKind;
+  dueOn: string;
+  recurrence: Recurrence;
+  note: string | null;
+}
+
+export interface ComplianceSummary {
+  overdue: number;
+  dueSoon: number;
+  total: number;
+  next: { title: string; dueOn: string } | null;
+}
+
+export interface AuditEntry {
+  id: string;
+  actorEmail: string | null;
+  actorRole: string | null;
+  action: string;
+  entityType: string;
+  entityId: string | null;
+  label: string | null;
+  createdAt: string;
 }
 
 export interface Loan {
@@ -266,6 +300,18 @@ export const api = {
     req<Inspection>(`/api/households/${id}/inspections`, { method: "POST", body: JSON.stringify(b) }),
   deleteInspection: (inspId: string) => req<void>(`/api/inspections/${inspId}`, { method: "DELETE" }),
   operationsSummary: (id: string) => req<OperationsSummary>(`/api/households/${id}/operations/summary`),
+
+  // compliance calendar
+  listCompliance: (id: string) => req<ComplianceItem[]>(`/api/households/${id}/compliance`),
+  complianceSummary: (id: string) => req<ComplianceSummary>(`/api/households/${id}/compliance/summary`),
+  createCompliance: (id: string, b: Partial<ComplianceItem>) =>
+    req<ComplianceItem>(`/api/households/${id}/compliance`, { method: "POST", body: JSON.stringify(b) }),
+  completeCompliance: (itemId: string) =>
+    req<{ completed: boolean; item: ComplianceItem | null }>(`/api/compliance/${itemId}/complete`, { method: "POST" }),
+  deleteCompliance: (itemId: string) => req<void>(`/api/compliance/${itemId}`, { method: "DELETE" }),
+
+  // audit trail (owner only)
+  listAudit: (id: string) => req<AuditEntry[]>(`/api/households/${id}/audit`),
 };
 
 // --- session, persisted in the browser ---

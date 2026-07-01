@@ -6,6 +6,8 @@ import { HttpError } from './pool.ts';
 import * as repo from './repo.ts';
 import * as ops from './ops.ts';
 import * as auth from './auth.ts';
+import * as compliance from './compliance.ts';
+import { auditMiddleware, listAudit } from './audit.ts';
 
 export const app = express();
 app.use(express.json());
@@ -42,6 +44,9 @@ app.use((req, res, next) => {
 
 const { requireRole, sameHousehold, scopeResource, scopeVia } = auth;
 const ownerOnly = requireRole('owner');
+
+// Record who changed what (runs after authentication, before the handlers).
+app.use(auditMiddleware);
 
 // ---- current user ---------------------------------------------------------
 app.get('/api/auth/me', h(async (req, res) => res.json(await auth.getUserById(req.user!.id))));
@@ -116,6 +121,17 @@ app.patch('/api/members/:id', scopeResource('members'), ownerOnly, h(async (req,
 app.delete('/api/members/:id', scopeResource('members'), ownerOnly, h(async (req, res) => { await repo.deleteMember(req.params.id); res.sendStatus(204); }));
 // Per-member net worth & exposure (owner only — financial).
 app.get('/api/households/:id/members/assessment', sameHousehold, ownerOnly, h(async (req, res) => res.json(await memberAssessments(req.params.id, new Date()))));
+
+// ---- compliance calendar (owner + operations track/complete due dates) ---
+app.get('/api/households/:id/compliance', sameHousehold, h(async (req, res) => res.json(await compliance.listCompliance(req.params.id))));
+app.get('/api/households/:id/compliance/summary', sameHousehold, h(async (req, res) => res.json(await compliance.complianceSummary(req.params.id))));
+app.post('/api/households/:id/compliance', sameHousehold, h(async (req, res) => res.status(201).json(await compliance.createCompliance(req.params.id, req.body))));
+app.patch('/api/compliance/:id', scopeResource('compliance_items'), h(async (req, res) => res.json(await compliance.updateCompliance(req.params.id, req.body))));
+app.post('/api/compliance/:id/complete', scopeResource('compliance_items'), h(async (req, res) => res.json(await compliance.completeCompliance(req.params.id))));
+app.delete('/api/compliance/:id', scopeResource('compliance_items'), h(async (req, res) => { await compliance.deleteCompliance(req.params.id); res.sendStatus(204); }));
+
+// ---- audit trail (owner only — oversight) --------------------------------
+app.get('/api/households/:id/audit', sameHousehold, ownerOnly, h(async (req, res) => res.json(await listAudit(req.params.id))));
 
 // ---- team / users (owner only) -------------------------------------------
 app.get('/api/households/:id/users', sameHousehold, ownerOnly, h(async (req, res) => res.json(await auth.listUsers(req.params.id))));

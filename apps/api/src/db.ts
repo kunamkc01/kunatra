@@ -21,7 +21,7 @@ async function load(householdId: string): Promise<Loaded> {
 
   const [assetsR, loansR, hhR, contribR, membersR] = await Promise.all([
     pool.query(
-      `SELECT id, name, asset_class, current_value_paise, liquid, cost_basis_paise, monthly_contribution_paise, member_id
+      `SELECT id, name, asset_class, current_value_paise, liquid, cost_basis_paise, monthly_contribution_paise, member_id, monthly_rent_paise
          FROM assets WHERE household_id = $1`,
       [householdId]
     ),
@@ -59,6 +59,7 @@ async function load(householdId: string): Promise<Loaded> {
       liquid: r.liquid,
       costBasis: r.cost_basis_paise != null ? paiseToRupees(r.cost_basis_paise) : undefined,
       monthlyContribution: r.monthly_contribution_paise != null ? paiseToRupees(r.monthly_contribution_paise) : undefined,
+      monthlyRent: r.monthly_rent_paise != null ? paiseToRupees(r.monthly_rent_paise) : undefined,
       contributions: contribByAsset.get(r.id),
     };
   });

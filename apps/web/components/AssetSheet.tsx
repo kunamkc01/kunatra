@@ -37,6 +37,7 @@ export function AssetSheet({
   const [name, setName] = useState(existing?.name ?? "");
   const [assetClass, setAssetClass] = useState<AssetClass>(existing?.assetClass ?? "cash");
   const [memberId, setMemberId] = useState(existing?.memberId ?? "");
+  const [monthlyRent, setMonthlyRent] = useState(existing?.monthlyRent != null ? String(existing.monthlyRent) : "");
   const [value, setValue] = useState(existing ? String(existing.value) : "");
   const [liquid, setLiquid] = useState<boolean>(
     existing?.liquid ?? CLASSES.find((c) => c.value === "cash")!.liquidDefault
@@ -136,6 +137,7 @@ export function AssetSheet({
       value: Number(value),
       liquid,
       memberId: memberId || null,
+      monthlyRent: monthlyRent ? Number(monthlyRent) : null,
       costBasis: costBasis ? Number(costBasis) : null,
       monthlyContribution: monthlyContribution ? Number(monthlyContribution) : null,
       ...(assetClass === "real_estate"
@@ -221,9 +223,16 @@ export function AssetSheet({
                 <input value={carPark} onChange={(e) => setCarPark(e.target.value)} placeholder="e.g. B-12" />
               </div>
             </div>
-            <div className="field">
-              <label>Car park size</label>
-              <input value={carParkSize} onChange={(e) => setCarParkSize(e.target.value)} placeholder="e.g. Covered, 1 slot" />
+            <div className="row2">
+              <div className="field">
+                <label>Car park size</label>
+                <input value={carParkSize} onChange={(e) => setCarParkSize(e.target.value)} placeholder="e.g. Covered, 1 slot" />
+              </div>
+              <div className="field">
+                <label>Monthly rent (if let)</label>
+                <input inputMode="numeric" value={monthlyRent} onChange={(e) => setMonthlyRent(e.target.value)} placeholder="e.g. 35000" />
+                <div className="hint">Drives rent-vs-EMI (DSCR)</div>
+              </div>
             </div>
           </>
         )}

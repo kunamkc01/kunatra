@@ -126,8 +126,8 @@ export async function login(body: any) {
   return { token: tokenFor(user), user };
 }
 
-function tokenFor(user: { id: string; householdId: string; role: Role }) {
-  return signToken({ sub: user.id, hh: user.householdId, role: user.role });
+function tokenFor(user: { id: string; householdId: string; role: Role; email: string }) {
+  return signToken({ sub: user.id, hh: user.householdId, role: user.role, email: user.email });
 }
 
 export async function getUserById(id: string) {

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   api,
-  type Asset, type Vendor, type WorkOrder, type Inspection, type Household, type OperationsSummary, type WorkOrderStatus,
+  type Asset, type Vendor, type WorkOrder, type Inspection, type Household, type OperationsSummary, type WorkOrderStatus, type ComplianceItem,
 } from "@/lib/api";
 import { useAuth } from "@/lib/useAuth";
 import { inr } from "@/lib/format";
@@ -11,8 +11,18 @@ import { Shell } from "@/components/Shell";
 import { WorkOrderSheet } from "@/components/WorkOrderSheet";
 import { VendorSheet } from "@/components/VendorSheet";
 import { InspectionSheet } from "@/components/InspectionSheet";
+import { ComplianceSheet } from "@/components/ComplianceSheet";
 
-type Tab = "work" | "vendors" | "inspections";
+type Tab = "work" | "vendors" | "inspections" | "compliance";
+const KIND_LABEL: Record<string, string> = { property_tax: "Property tax", insurance: "Insurance", amc: "AMC", inspection: "Inspection", renewal: "Renewal", other: "Other" };
+function dueClass(dueOn: string): { pill: string; text: string } {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const due = new Date(`${dueOn}T00:00:00`);
+  const days = Math.round((due.getTime() - today.getTime()) / 86400000);
+  if (days < 0) return { pill: "p-bad", text: `${-days}d overdue` };
+  if (days <= 30) return { pill: "p-warn", text: days === 0 ? "due today" : `in ${days}d` };
+  return { pill: "p-good", text: `in ${days}d` };
+}
 const CAT_LABEL: Record<string, string> = { repair: "Repair", maintenance: "Maintenance", amc: "AMC", improvement: "Improvement", other: "Other" };
 const WO_PILL: Record<string, string> = { open: "p-warn", in_progress: "p-acc", done: "p-good", cancelled: "p-muted" };
 const RATING_PILL: Record<string, string> = { good: "p-good", fair: "p-warn", poor: "p-bad" };
@@ -27,20 +37,22 @@ export default function Operations() {
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [inspections, setInspections] = useState<Inspection[]>([]);
+  const [compliance, setCompliance] = useState<ComplianceItem[]>([]);
   const [summary, setSummary] = useState<OperationsSummary | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   const [woSheet, setWoSheet] = useState<{ open: boolean; edit?: WorkOrder | null }>({ open: false });
   const [vendorSheet, setVendorSheet] = useState<{ open: boolean; edit?: Vendor | null }>({ open: false });
   const [inspSheet, setInspSheet] = useState(false);
+  const [compSheet, setCompSheet] = useState(false);
 
   const load = useCallback(async (id: string) => {
     setErr(null);
     try {
-      const [hh, a, v, w, i, s] = await Promise.all([
-        api.getHousehold(id), api.listAssets(id), api.listVendors(id), api.listWorkOrders(id), api.listInspections(id), api.operationsSummary(id),
+      const [hh, a, v, w, i, s, c] = await Promise.all([
+        api.getHousehold(id), api.listAssets(id), api.listVendors(id), api.listWorkOrders(id), api.listInspections(id), api.operationsSummary(id), api.listCompliance(id),
       ]);
-      setHousehold(hh); setAssets(a); setVendors(v); setWorkOrders(w); setInspections(i); setSummary(s);
+      setHousehold(hh); setAssets(a); setVendors(v); setWorkOrders(w); setInspections(i); setSummary(s); setCompliance(c);
     } catch (e: any) {
       setErr(e.message ?? "Could not load");
     }
@@ -72,6 +84,12 @@ export default function Operations() {
   async function removeWo(wo: WorkOrder) { if (confirm(`Delete work order "${wo.title}"?`)) { await api.deleteWorkOrder(wo.id); refresh(); } }
   async function removeVendor(v: Vendor) { if (confirm(`Delete vendor "${v.name}"?`)) { await api.deleteVendor(v.id); refresh(); } }
   async function removeInspection(i: Inspection) { if (confirm(`Delete this inspection?`)) { await api.deleteInspection(i.id); refresh(); } }
+  async function completeCompliance(c: ComplianceItem) {
+    const msg = c.recurrence === "none" ? `Mark "${c.title}" done? It will be removed.` : `Mark "${c.title}" done and roll it to the next ${c.recurrence.replace("ly", "")}?`;
+    if (!confirm(msg)) return;
+    await api.completeCompliance(c.id); refresh();
+  }
+  async function removeCompliance(c: ComplianceItem) { if (confirm(`Delete "${c.title}"?`)) { await api.deleteCompliance(c.id); refresh(); } }
 
   if (!ready) return <Shell><div /></Shell>;
   if (!hhId) {
@@ -106,6 +124,7 @@ export default function Operations() {
         <button className={`subtab ${tab === "work" ? "active" : ""}`} onClick={() => setTab("work")}>Work orders</button>
         <button className={`subtab ${tab === "vendors" ? "active" : ""}`} onClick={() => setTab("vendors")}>Vendors</button>
         <button className={`subtab ${tab === "inspections" ? "active" : ""}`} onClick={() => setTab("inspections")}>Inspections</button>
+        <button className={`subtab ${tab === "compliance" ? "active" : ""}`} onClick={() => setTab("compliance")}>Compliance</button>
       </div>
 
       {tab === "work" && (
@@ -176,6 +195,33 @@ export default function Operations() {
         </>
       )}
 
+      {tab === "compliance" && (
+        <>
+          <div className="sec-label">Compliance calendar<button className="btn small primary" onClick={() => setCompSheet(true)}>+ Add due date</button></div>
+          {compliance.length === 0 && <div className="empty">No due dates. Add property tax, insurance, AMC or inspection deadlines so nothing slips.</div>}
+          {compliance.map((c) => {
+            const d = dueClass(c.dueOn);
+            return (
+              <div className="row-item" key={c.id}>
+                <div className="h">
+                  <span className="t">{c.title}</span>
+                  <span className={`pill ${d.pill}`}>{d.text}</span>
+                </div>
+                <div className="meta">
+                  {KIND_LABEL[c.kind]} · due {c.dueOn}
+                  {c.recurrence !== "none" ? ` · ${c.recurrence}` : ""}
+                  {c.assetName ? ` · ${c.assetName}` : ""}
+                </div>
+                <div className="acts">
+                  <button className="btn small primary" onClick={() => completeCompliance(c)}>Mark done</button>
+                  <button className="btn ghost small danger" onClick={() => removeCompliance(c)}>Delete</button>
+                </div>
+              </div>
+            );
+          })}
+        </>
+      )}
+
       {woSheet.open && hhId && (
         <WorkOrderSheet householdId={hhId} existing={woSheet.edit} assets={assets} vendors={vendors} onClose={() => setWoSheet({ open: false })} onSaved={() => { setWoSheet({ open: false }); refresh(); }} />
       )}
@@ -184,6 +230,9 @@ export default function Operations() {
       )}
       {inspSheet && hhId && (
         <InspectionSheet householdId={hhId} assets={assets} onClose={() => setInspSheet(false)} onSaved={() => { setInspSheet(false); refresh(); }} />
+      )}
+      {compSheet && hhId && (
+        <ComplianceSheet householdId={hhId} assets={assets} onClose={() => setCompSheet(false)} onSaved={() => { setCompSheet(false); refresh(); }} />
       )}
     </Shell>
   );

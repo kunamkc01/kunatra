@@ -31,6 +31,8 @@ export interface Asset {
   monthlyContribution?: number;
   /** Dated cash flows for return maths. amount>0 = invested, amount<0 = withdrawn (rupees). */
   contributions?: { amount: number; on: string }[];
+  /** Monthly rent this asset brings in (let property), in rupees. Drives DSCR. Optional. */
+  monthlyRent?: number;
 }
 
 export interface Loan {
@@ -94,6 +96,10 @@ export interface Exposure {
   debtToAssets: number;
   /** Total EMI as a percent of monthly take-home. Null if income unknown. */
   emiToIncome: number | null;
+  /** Total monthly rent from let properties, in rupees. */
+  monthlyRent: number;
+  /** Debt-service coverage: monthly rent ÷ total EMI. Null if no EMI. */
+  dscr: number | null;
   /** Months of EMIs + essential spend covered by liquid assets. Null if outflow unknown. */
   runwayMonths: number | null;
   /** The single largest asset as a percent of gross assets. */

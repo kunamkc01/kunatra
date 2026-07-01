@@ -33,6 +33,15 @@ test('assess computes portfolio XIRR when given an as-of date', () => {
   assert.ok(assess(salariedSample).investments.xirrPct === null); // null without as-of
 });
 
+test('dscr = monthly rent / total EMI', () => {
+  const ex = exposure({
+    assets: [{ id: 'p', name: 'Flat', assetClass: 'real_estate', value: 10_000_000, liquid: false, monthlyRent: 40_000 }],
+    loans: [{ id: 'l', name: 'Home', outstanding: 5_000_000, emiMonthly: 50_000, securedAgainstAssetId: 'p' }],
+  });
+  assert.equal(ex.monthlyRent, 40_000);
+  assert.ok(Math.abs((ex.dscr ?? 0) - 0.8) < 1e-9);
+});
+
 test('signals describe, with severities', () => {
   const { signals } = assess(salariedSample);
   const ltv = signals.find((s) => s.key === 'ltv');
