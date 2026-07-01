@@ -1,0 +1,22 @@
+# Kunatra API — Express + pg over @atlas/engine, run via Node's native TS stripping.
+FROM node:22-slim
+
+WORKDIR /repo
+
+# Install workspace deps first (better layer caching) — copy manifests, then install.
+COPY package.json package-lock.json ./
+COPY packages/engine/package.json packages/engine/
+COPY apps/api/package.json apps/api/
+COPY apps/web/package.json apps/web/
+RUN npm install
+
+# Source, then build the engine to dist/ so the API can import @atlas/engine.
+COPY . .
+RUN npm run build -w @atlas/engine
+
+ENV NODE_ENV=production
+ENV PORT=4100
+EXPOSE 4100
+
+# isMain guard in index.ts starts the server when run directly.
+CMD ["node", "--experimental-strip-types", "apps/api/src/index.ts"]

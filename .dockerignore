@@ -1,0 +1,13 @@
+# Never copy host build artifacts / deps into the image — they're rebuilt inside.
+node_modules
+**/node_modules
+.next
+**/.next
+**/dist
+.git
+.env
+**/.env
+!**/.env.example
+npm-debug.log*
+*.tsbuildinfo
+.DS_Store

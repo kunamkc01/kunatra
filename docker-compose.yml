@@ -1,0 +1,53 @@
+# Kunatra — local stack: Postgres + API + web.
+#   docker compose up --build
+# Then open http://localhost:3000 (API on http://localhost:4100).
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: kunatra
+      POSTGRES_PASSWORD: kunatra
+      POSTGRES_DB: kunatra
+    volumes:
+      - kunatra-db:/var/lib/postgresql/data
+      # Loaded once, on first init of an empty data volume.
+      - ./apps/api/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kunatra -d kunatra"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    # Not published to the host by default (avoids clashing with a local Postgres
+    # on 5432). Uncomment to inspect from the host on 5433:
+    # ports:
+    #   - "5433:5432"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    environment:
+      PORT: 4100
+      DATABASE_URL: postgres://kunatra:kunatra@db:5432/kunatra
+      CORS_ORIGIN: http://localhost:3000
+      FIELD_ENCRYPTION_KEY: dev-only-not-secret
+    ports:
+      - "4100:4100"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        # Baked into the client bundle — must be reachable from the browser.
+        NEXT_PUBLIC_API_BASE: http://localhost:4100
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  kunatra-db:

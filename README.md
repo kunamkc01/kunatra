@@ -34,7 +34,22 @@ npm test
 npm run build -w @atlas/engine
 ```
 
-### Run the full app (mirror + manual entry)
+### Run the whole stack with Docker (easiest)
+Postgres + API + web, one command. Needs Docker with Compose v2.
+
+```bash
+docker compose up --build
+```
+- Web: http://localhost:3000 · API: http://localhost:4100
+- The schema loads automatically on first run; the DB lives in the `kunatra-db` volume.
+- Postgres isn't published to the host by default (so it won't clash with a local
+  Postgres on 5432) — uncomment the `ports` under `db` in `docker-compose.yml` to expose it.
+- `NEXT_PUBLIC_API_BASE` is baked into the web image at build time (it's a client-side
+  URL), so it points at the published API port `http://localhost:4100`.
+
+Reset everything (including the database): `docker compose down -v`.
+
+### Run the full app locally (mirror + manual entry)
 ```bash
 # a) Postgres — create the DB and load the schema
 createdb kunatra
