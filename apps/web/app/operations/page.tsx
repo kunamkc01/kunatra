@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  api,
+  api, getUser,
   type Asset, type Vendor, type WorkOrder, type Inspection, type Household, type OperationsSummary, type WorkOrderStatus, type ComplianceItem, type Approval, type RentCollection, type RentSummary,
 } from "@/lib/api";
 import { useAuth } from "@/lib/useAuth";
@@ -35,6 +35,7 @@ export default function Operations() {
   const { user, ready } = useAuth();
   const hhId = user?.householdId ?? null;
   const isOwner = user?.role === "owner" || user?.role === "manager"; // decision-makers (approve/reject)
+  const readOnly = user?.role === "member"; // members see the upkeep, but don't run it
   const [household, setHousehold] = useState<Household | null>(null);
   const [tab, setTab] = useState<Tab>("work");
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -58,7 +59,9 @@ export default function Operations() {
     setErr(null);
     try {
       const [hh, a, v, w, i, s, c, r, rr, rs] = await Promise.all([
-        api.getHousehold(id), api.listAssets(id), api.listVendors(id), api.listWorkOrders(id), api.listInspections(id), api.operationsSummary(id), api.listCompliance(id), api.listApprovals(id),
+        api.getHousehold(id), api.listAssets(id), api.listVendors(id), api.listWorkOrders(id), api.listInspections(id), api.operationsSummary(id), api.listCompliance(id),
+        // members view the upkeep but aren't part of the approval workflow
+        getUser()?.role === "member" ? Promise.resolve([]) : api.listApprovals(id),
         api.listRent(id), api.rentSummary(id),
       ]);
       setHousehold(hh); setAssets(a); setVendors(v); setWorkOrders(w); setInspections(i); setSummary(s); setCompliance(c); setRequests(r); setRentRoll(rr); setRentSummary(rs);
@@ -150,12 +153,12 @@ export default function Operations() {
         <button className={`subtab ${tab === "vendors" ? "active" : ""}`} onClick={() => setTab("vendors")}>Vendors</button>
         <button className={`subtab ${tab === "inspections" ? "active" : ""}`} onClick={() => setTab("inspections")}>Inspections</button>
         <button className={`subtab ${tab === "compliance" ? "active" : ""}`} onClick={() => setTab("compliance")}>Compliance</button>
-        <button className={`subtab ${tab === "requests" ? "active" : ""}`} onClick={() => setTab("requests")}>Requests{pendingRequests ? ` (${pendingRequests})` : ""}</button>
+        {!readOnly && <button className={`subtab ${tab === "requests" ? "active" : ""}`} onClick={() => setTab("requests")}>Requests{pendingRequests ? ` (${pendingRequests})` : ""}</button>}
       </div>
 
       {tab === "work" && (
         <>
-          <div className="sec-label">Work orders<button className="btn small primary" onClick={() => setWoSheet({ open: true, edit: null })}>+ New</button></div>
+          <div className="sec-label">Work orders{!readOnly && <button className="btn small primary" onClick={() => setWoSheet({ open: true, edit: null })}>+ New</button>}</div>
           {workOrders.length === 0 && <div className="empty">No work orders. Raise one for a repair or AMC.</div>}
           {workOrders.map((w) => (
             <div className="row-item" key={w.id}>
@@ -171,7 +174,7 @@ export default function Operations() {
                 {w.scheduledFor ? ` · due ${w.scheduledFor}` : ""}
                 {w.actualCost != null ? ` · cost ${inr(w.actualCost)}` : w.estimatedCost != null ? ` · est. ${inr(w.estimatedCost)}` : ""}
               </div>
-              <div className="acts">
+              {!readOnly && <div className="acts">
                 {w.status === "open" && <button className="btn small" onClick={() => transition(w, "in_progress")}>Start</button>}
                 {w.status === "in_progress" && <button className="btn small primary" onClick={() => transition(w, "done")}>Complete</button>}
                 {(w.status === "open" || w.status === "in_progress") && <button className="btn small" onClick={() => transition(w, "cancelled")}>Cancel</button>}
@@ -179,7 +182,7 @@ export default function Operations() {
                 {w.status === "cancelled" && <button className="btn small" onClick={() => transition(w, "open")}>Reopen</button>}
                 <button className="btn ghost small" onClick={() => setWoSheet({ open: true, edit: w })}>Edit</button>
                 <button className="btn ghost small danger" onClick={() => removeWo(w)}>Delete</button>
-              </div>
+              </div>}
             </div>
           ))}
         </>
@@ -206,11 +209,11 @@ export default function Operations() {
                   {inr(rc.netDue)} net{rc.tds > 0 ? ` (${inr(rc.amountDue)} − ${inr(rc.tds)} TDS)` : ""}
                   {rc.status === "collected" && rc.collectedOn ? ` · collected ${rc.collectedOn}${rc.collected != null ? ` · ${inr(rc.collected)}` : ""}` : ""}
                 </div>
-                <div className="acts">
+                {!readOnly && <div className="acts">
                   {rc.status !== "collected"
                     ? <button className="btn small primary" onClick={() => collectRent(rc)}>Mark collected</button>
                     : <button className="btn ghost small" onClick={() => undoRent(rc)}>Undo</button>}
-                </div>
+                </div>}
               </div>
             );
           })}
@@ -219,7 +222,7 @@ export default function Operations() {
 
       {tab === "vendors" && (
         <>
-          <div className="sec-label">Vendors<button className="btn small primary" onClick={() => setVendorSheet({ open: true, edit: null })}>+ Add</button></div>
+          <div className="sec-label">Vendors{!readOnly && <button className="btn small primary" onClick={() => setVendorSheet({ open: true, edit: null })}>+ Add</button>}</div>
           {vendors.length === 0 && <div className="empty">No vendors yet.</div>}
           {vendors.map((v) => (
             <div className="row-item" key={v.id}>
@@ -228,10 +231,10 @@ export default function Operations() {
                 {v.category && <span className="pill p-acc">{v.category}</span>}
               </div>
               <div className="meta">{v.phone ? `☎ ${v.phone}` : "No phone"}{v.notes ? ` · ${v.notes}` : ""}</div>
-              <div className="acts">
+              {!readOnly && <div className="acts">
                 <button className="btn ghost small" onClick={() => setVendorSheet({ open: true, edit: v })}>Edit</button>
                 <button className="btn ghost small danger" onClick={() => removeVendor(v)}>Delete</button>
-              </div>
+              </div>}
             </div>
           ))}
         </>
@@ -239,7 +242,7 @@ export default function Operations() {
 
       {tab === "inspections" && (
         <>
-          <div className="sec-label">Inspections<button className="btn small primary" onClick={() => setInspSheet(true)}>+ Log</button></div>
+          <div className="sec-label">Inspections{!readOnly && <button className="btn small primary" onClick={() => setInspSheet(true)}>+ Log</button>}</div>
           {inspections.length === 0 && <div className="empty">No inspections logged. Run condition checks so decline shows early.</div>}
           {inspections.map((i) => (
             <div className="row-item" key={i.id}>
@@ -248,7 +251,7 @@ export default function Operations() {
                 <span className={`pill ${RATING_PILL[i.rating]}`}>{i.rating}</span>
               </div>
               {i.notes && <div className="meta">{i.notes}</div>}
-              <div className="acts"><button className="btn ghost small danger" onClick={() => removeInspection(i)}>Delete</button></div>
+              {!readOnly && <div className="acts"><button className="btn ghost small danger" onClick={() => removeInspection(i)}>Delete</button></div>}
             </div>
           ))}
         </>
@@ -256,7 +259,7 @@ export default function Operations() {
 
       {tab === "compliance" && (
         <>
-          <div className="sec-label">Compliance calendar<button className="btn small primary" onClick={() => setCompSheet(true)}>+ Add due date</button></div>
+          <div className="sec-label">Compliance calendar{!readOnly && <button className="btn small primary" onClick={() => setCompSheet(true)}>+ Add due date</button>}</div>
           {compliance.length === 0 && <div className="empty">No due dates. Add property tax, insurance, AMC or inspection deadlines so nothing slips.</div>}
           {compliance.map((c) => {
             const d = dueClass(c.dueOn);
@@ -271,10 +274,10 @@ export default function Operations() {
                   {c.recurrence !== "none" ? ` · ${c.recurrence}` : ""}
                   {c.assetName ? ` · ${c.assetName}` : ""}
                 </div>
-                <div className="acts">
+                {!readOnly && <div className="acts">
                   <button className="btn small primary" onClick={() => completeCompliance(c)}>Mark done</button>
                   <button className="btn ghost small danger" onClick={() => removeCompliance(c)}>Delete</button>
-                </div>
+                </div>}
               </div>
             );
           })}

@@ -159,6 +159,7 @@ export default function Assets() {
               <div className="meta">
                 {assets.filter((a) => a.memberId === m.id).length} asset(s)
                 {m.monthlyGross != null ? ` · gross ${inr(m.monthlyGross)}${m.monthlyTds ? ` − TDS ${inr(m.monthlyTds)}` : ""}` : ""}
+                {m.monthlyExpenses != null ? ` · spends ${inr(m.monthlyExpenses)}/mo` : ""}
               </div>
               {(canManageMoney || (role === "member" && m.id === user?.memberId)) && (
                 <div className="acts">
@@ -254,14 +255,14 @@ function CashflowPanel({ household, onSaved, readOnly = false, membersDriveIncom
       <h3>Monthly spending</h3>
       <p className="desc">
         {membersDriveIncome
-          ? "Income comes from your members (salary) and let properties (rent). Set your household essentials here — it drives runway and surplus."
+          ? "Income comes from your members (salary) and let properties (rent). Set the SHARED household essentials here — each member's personal expenses (set on the member) add on top."
           : "Your take-home and essentials — drives EMI-strain, runway and surplus. Add family members to split salary out per person."}
       </p>
       <div className="row2">
         {!membersDriveIncome && (
           <div className="field"><label>Take-home (₹)</label><input inputMode="numeric" value={takeHome} disabled={readOnly} onChange={(e) => { setTakeHome(e.target.value); setSaved(false); }} placeholder="140000" /></div>
         )}
-        <div className="field"><label>Essentials (₹/mo)</label><input inputMode="numeric" value={essential} disabled={readOnly} onChange={(e) => { setEssential(e.target.value); setSaved(false); }} placeholder="50000" /></div>
+        <div className="field"><label>Shared essentials (₹/mo)</label><input inputMode="numeric" value={essential} disabled={readOnly} onChange={(e) => { setEssential(e.target.value); setSaved(false); }} placeholder="50000" /></div>
       </div>
       {!readOnly && (
         <div className="actions">

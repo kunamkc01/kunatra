@@ -15,6 +15,7 @@ export function MemberSheet({
   const [name, setName] = useState(existing?.name ?? "");
   const [gross, setGross] = useState(existing?.monthlyGross != null ? String(existing.monthlyGross) : "");
   const [tds, setTds] = useState(existing?.monthlyTds != null ? String(existing.monthlyTds) : "");
+  const [expenses, setExpenses] = useState(existing?.monthlyExpenses != null ? String(existing.monthlyExpenses) : "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -23,10 +24,10 @@ export function MemberSheet({
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true); setErr(null);
-    const body = { name: name.trim(), monthlyGross: gross ? Number(gross) : null, monthlyTds: tds ? Number(tds) : null };
+    const body = { name: name.trim(), monthlyGross: gross ? Number(gross) : null, monthlyTds: tds ? Number(tds) : null, monthlyExpenses: expenses ? Number(expenses) : null };
     try {
       if (existing) await api.updateMember(existing.id, body);
-      else await api.createMember(householdId, { name: body.name, monthlyGross: body.monthlyGross ?? undefined, monthlyTds: body.monthlyTds ?? undefined });
+      else await api.createMember(householdId, { name: body.name, monthlyGross: body.monthlyGross ?? undefined, monthlyTds: body.monthlyTds ?? undefined, monthlyExpenses: body.monthlyExpenses ?? undefined });
       onSaved();
     } catch (e: any) { setErr(e.message ?? "Could not save"); setBusy(false); }
   }
@@ -51,6 +52,11 @@ export function MemberSheet({
         {net != null && (
           <div className="hint" style={{ marginTop: -4, marginBottom: 10 }}>Take-home (net): <b style={{ color: "var(--ink)" }}>{inr(net)}/mo</b> — this is what adds to the household total.</div>
         )}
+        <div className="field">
+          <label>Personal expenses (₹/month)</label>
+          <input inputMode="numeric" value={expenses} onChange={(e) => setExpenses(e.target.value)} placeholder="their own monthly spend" />
+          <div className="hint">Kept per person; it adds on top of the household's shared essentials in runway &amp; surplus.</div>
+        </div>
         {err && <div className="err">{err}</div>}
         <div className="actions">
           <button className="btn primary" type="submit" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
