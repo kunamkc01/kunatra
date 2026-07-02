@@ -11,6 +11,7 @@ import * as compliance from './compliance.ts';
 import * as approvals from './approvals.ts';
 import { auditMiddleware, listAudit } from './audit.ts';
 import { remindDueCompliance } from './notify.ts';
+import * as admin from './admin.ts';
 
 export const app = express();
 // Bodies can carry downscaled images (avatars, asset photos) as data URLs, so
@@ -170,6 +171,10 @@ app.get('/api/households/:id/approvals/summary', sameHousehold, manageMoney, h(a
 app.post('/api/households/:id/approvals', sameHousehold, opsOrOwner, h(async (req, res) => res.status(201).json(await approvals.createApproval(req.params.id, req.user!, req.body))));
 app.post('/api/approvals/:id/decide', scopeResource('approval_requests'), manageMoney, h(async (req, res) => res.json(await approvals.decideApproval(req.params.id, req.user!, req.body))));
 app.delete('/api/approvals/:id', scopeResource('approval_requests'), manageMoney, h(async (req, res) => { await approvals.deleteApproval(req.params.id); res.sendStatus(204); }));
+
+// ---- platform admin (app operator; counts only, no household money) -------
+app.get('/api/admin/stats', auth.requireAdmin, h(async (_req, res) => res.json({ ...(await admin.platformStats()), signupsByWeek: await admin.signupsByWeek() })));
+app.get('/api/admin/users', auth.requireAdmin, h(async (_req, res) => res.json(await admin.listAllUsers())));
 
 // ---- audit trail (owner only — oversight) --------------------------------
 app.get('/api/households/:id/audit', sameHousehold, ownerOnly, h(async (req, res) => res.json(await listAudit(req.params.id))));

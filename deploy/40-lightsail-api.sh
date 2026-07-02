@@ -30,7 +30,8 @@ cat > "$TMP/containers.json" <<JSON
       "SES_FROM": "${SES_FROM:-no-reply@kunatra.com}",
       "NOTIFY_REGION": "${AWS_REGION}",
       "NOTIFY_ACCESS_KEY_ID": "${NOTIFY_ACCESS_KEY_ID:-}",
-      "NOTIFY_SECRET_ACCESS_KEY": "${NOTIFY_SECRET_ACCESS_KEY:-}"
+      "NOTIFY_SECRET_ACCESS_KEY": "${NOTIFY_SECRET_ACCESS_KEY:-}",
+      "ADMIN_EMAILS": "${ADMIN_EMAILS:-}"
     }
   }
 }

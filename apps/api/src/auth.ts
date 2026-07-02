@@ -8,6 +8,11 @@ import { sendEmail, appUrl } from './notify.ts';
 const SECRET = process.env.AUTH_SECRET ?? 'dev-insecure-secret-change-me';
 const TOKEN_TTL_SEC = 60 * 60 * 24 * 7; // 7 days
 
+// Platform admins (the app operator) — an env allowlist, so it can't be granted
+// from inside a tenant. Admins see platform-wide counts, never household money.
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS ?? '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
+export const isAdminEmail = (email: string) => ADMIN_EMAILS.includes((email ?? '').toLowerCase());
+
 export type Role = 'owner' | 'manager' | 'member' | 'operations' | 'advisor';
 const ROLES: Role[] = ['owner', 'manager', 'member', 'operations', 'advisor'];
 export interface AuthUser { id: string; householdId: string; role: Role; email: string; memberId: string | null; }
@@ -195,7 +200,7 @@ async function session(userId: string, householdId: string) {
   const { rows } = await db().query(`SELECT * FROM users WHERE id = $1`, [userId]);
   const base = userRow(rows[0]);
   const user = { id: base.id, email: base.email, fullName: base.fullName, avatar: base.avatar, phone: base.phone,
-    householdId: active.householdId, role: active.role, memberId: active.memberId, households };
+    householdId: active.householdId, role: active.role, memberId: active.memberId, households, isAdmin: isAdminEmail(base.email) };
   return { token: tokenFor(userId, active.householdId, base.email), user };
 }
 
@@ -357,6 +362,13 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
   } catch (e) {
     next(e);
   }
+}
+
+/** Platform-admin only (the app operator), by email allowlist. */
+export function requireAdmin(req: Request, _res: Response, next: NextFunction) {
+  if (!req.user) return next(new HttpError(401, 'unauthenticated'));
+  if (!isAdminEmail(req.user.email)) return next(new HttpError(403, 'forbidden', 'Admin only'));
+  next();
 }
 
 /** Restrict to specific roles. */
