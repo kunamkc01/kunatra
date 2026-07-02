@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { api, type Asset, type Vendor, type WorkOrder, type WorkOrderCategory, type Recurrence } from "@/lib/api";
+import { api, type Asset, type Vendor, type WorkOrder, type WorkOrderCategory, type Recurrence, type RecurrenceMode } from "@/lib/api";
 import { Sheet } from "./Sheet";
 
 const RECUR: { value: Recurrence; label: string }[] = [
@@ -37,6 +37,7 @@ export function WorkOrderSheet({
   const [actualCost, setActual] = useState(existing?.actualCost != null ? String(existing.actualCost) : "");
   const [notes, setNotes] = useState(existing?.notes ?? "");
   const [recurrence, setRecurrence] = useState<Recurrence>(existing?.recurrence ?? "none");
+  const [recurrenceMode, setRecurrenceMode] = useState<RecurrenceMode>(existing?.recurrenceMode ?? "fixed");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -54,6 +55,7 @@ export function WorkOrderSheet({
       actualCost: actualCost ? Number(actualCost) : null,
       notes: notes.trim() || null,
       recurrence,
+      recurrenceMode,
     };
     try {
       if (existing) await api.updateWorkOrder(existing.id, body);
@@ -117,8 +119,19 @@ export function WorkOrderSheet({
             <select value={recurrence} onChange={(e) => setRecurrence(e.target.value as Recurrence)}>
               {RECUR.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
             </select>
-            {recurrence !== "none" && <div className="hint">A fresh one is created when you complete it</div>}
           </div>
+          {recurrence !== "none" && (
+            <div className="field">
+              <label>Recur by</label>
+              <select value={recurrenceMode} onChange={(e) => setRecurrenceMode(e.target.value as RecurrenceMode)}>
+                <option value="fixed">Fixed date each period</option>
+                <option value="on_completion">After the last is completed</option>
+              </select>
+              <div className="hint">{recurrenceMode === "fixed" ? "Generated on the calendar, whether or not the last is done" : "A fresh one appears only when you complete the current"}</div>
+            </div>
+          )}
+        </div>
+        <div className="row2">
           <div className="field">
             <label>Notes</label>
             <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional" />

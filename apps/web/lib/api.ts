@@ -156,6 +156,24 @@ export interface Household {
 export type WorkOrderStatus = "open" | "in_progress" | "done" | "cancelled";
 export type WorkOrderCategory = "repair" | "maintenance" | "amc" | "improvement" | "other";
 export type InspectionRating = "good" | "fair" | "poor";
+export type RecurrenceMode = "on_completion" | "fixed";
+
+export interface RentCollection {
+  id: string;
+  householdId: string;
+  assetId: string;
+  assetName: string | null;
+  periodMonth: string; // YYYY-MM-01
+  amountDue: number;
+  tds: number;
+  netDue: number;
+  status: "due" | "collected" | "waived";
+  collectedOn: string | null;
+  collected: number | null;
+  note: string | null;
+}
+
+export interface RentSummary { outstandingCount: number; outstanding: number; overdueCount: number; }
 
 export interface Vendor {
   id: string;
@@ -178,6 +196,8 @@ export interface WorkOrder {
   category: WorkOrderCategory;
   status: WorkOrderStatus;
   recurrence: Recurrence;
+  recurrenceMode: RecurrenceMode;
+  seriesId?: string | null;
   scheduledFor: string | null;
   estimatedCost: number | null;
   actualCost: number | null;
@@ -385,6 +405,14 @@ export const api = {
     req<Inspection>(`/api/households/${id}/inspections`, { method: "POST", body: JSON.stringify(b) }),
   deleteInspection: (inspId: string) => req<void>(`/api/inspections/${inspId}`, { method: "DELETE" }),
   operationsSummary: (id: string) => req<OperationsSummary>(`/api/households/${id}/operations/summary`),
+
+  // rent roll
+  listRent: (id: string) => req<RentCollection[]>(`/api/households/${id}/rent`),
+  rentSummary: (id: string) => req<RentSummary>(`/api/households/${id}/rent/summary`),
+  collectRent: (rentId: string, b: { on?: string; amount?: number }) =>
+    req<RentCollection>(`/api/rent/${rentId}/collect`, { method: "POST", body: JSON.stringify(b) }),
+  updateRent: (rentId: string, b: { status: "due" | "collected" | "waived"; note?: string }) =>
+    req<RentCollection>(`/api/rent/${rentId}`, { method: "PATCH", body: JSON.stringify(b) }),
 
   // compliance calendar
   listCompliance: (id: string) => req<ComplianceItem[]>(`/api/households/${id}/compliance`),

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   api,
-  type Asset, type Vendor, type WorkOrder, type Inspection, type Household, type OperationsSummary, type WorkOrderStatus, type ComplianceItem, type Approval,
+  type Asset, type Vendor, type WorkOrder, type Inspection, type Household, type OperationsSummary, type WorkOrderStatus, type ComplianceItem, type Approval, type RentCollection, type RentSummary,
 } from "@/lib/api";
 import { useAuth } from "@/lib/useAuth";
 import { inr } from "@/lib/format";
@@ -14,7 +14,8 @@ import { InspectionSheet } from "@/components/InspectionSheet";
 import { ComplianceSheet } from "@/components/ComplianceSheet";
 import { ApprovalSheet } from "@/components/ApprovalSheet";
 
-type Tab = "work" | "vendors" | "inspections" | "compliance" | "requests";
+type Tab = "work" | "rent" | "vendors" | "inspections" | "compliance" | "requests";
+const monthLabel = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString("en-IN", { month: "short", year: "numeric" });
 const APPROVAL_PILL: Record<string, string> = { pending: "p-warn", approved: "p-good", rejected: "p-bad" };
 const KIND_LABEL: Record<string, string> = { property_tax: "Property tax", insurance: "Insurance", amc: "AMC", inspection: "Inspection", renewal: "Renewal", other: "Other" };
 function dueClass(dueOn: string): { pill: string; text: string } {
@@ -42,6 +43,8 @@ export default function Operations() {
   const [inspections, setInspections] = useState<Inspection[]>([]);
   const [compliance, setCompliance] = useState<ComplianceItem[]>([]);
   const [requests, setRequests] = useState<Approval[]>([]);
+  const [rentRoll, setRentRoll] = useState<RentCollection[]>([]);
+  const [rentSummary, setRentSummary] = useState<RentSummary | null>(null);
   const [summary, setSummary] = useState<OperationsSummary | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -54,10 +57,11 @@ export default function Operations() {
   const load = useCallback(async (id: string) => {
     setErr(null);
     try {
-      const [hh, a, v, w, i, s, c, r] = await Promise.all([
+      const [hh, a, v, w, i, s, c, r, rr, rs] = await Promise.all([
         api.getHousehold(id), api.listAssets(id), api.listVendors(id), api.listWorkOrders(id), api.listInspections(id), api.operationsSummary(id), api.listCompliance(id), api.listApprovals(id),
+        api.listRent(id), api.rentSummary(id),
       ]);
-      setHousehold(hh); setAssets(a); setVendors(v); setWorkOrders(w); setInspections(i); setSummary(s); setCompliance(c); setRequests(r);
+      setHousehold(hh); setAssets(a); setVendors(v); setWorkOrders(w); setInspections(i); setSummary(s); setCompliance(c); setRequests(r); setRentRoll(rr); setRentSummary(rs);
     } catch (e: any) {
       setErr(e.message ?? "Could not load");
     }
@@ -87,6 +91,14 @@ export default function Operations() {
   }
 
   async function removeWo(wo: WorkOrder) { if (confirm(`Delete work order "${wo.title}"?`)) { await api.deleteWorkOrder(wo.id); refresh(); } }
+  async function collectRent(rc: RentCollection) {
+    try { await api.collectRent(rc.id, {}); refresh(); }
+    catch (e: any) { alert(e.message ?? "Could not record"); }
+  }
+  async function undoRent(rc: RentCollection) {
+    try { await api.updateRent(rc.id, { status: "due" }); refresh(); }
+    catch (e: any) { alert(e.message ?? "Could not update"); }
+  }
   async function removeVendor(v: Vendor) { if (confirm(`Delete vendor "${v.name}"?`)) { await api.deleteVendor(v.id); refresh(); } }
   async function removeInspection(i: Inspection) { if (confirm(`Delete this inspection?`)) { await api.deleteInspection(i.id); refresh(); } }
   async function completeCompliance(c: ComplianceItem) {
@@ -134,6 +146,7 @@ export default function Operations() {
 
       <div className="subtabs">
         <button className={`subtab ${tab === "work" ? "active" : ""}`} onClick={() => setTab("work")}>Work orders</button>
+        <button className={`subtab ${tab === "rent" ? "active" : ""}`} onClick={() => setTab("rent")}>Rent{rentSummary?.outstandingCount ? ` (${rentSummary.outstandingCount})` : ""}</button>
         <button className={`subtab ${tab === "vendors" ? "active" : ""}`} onClick={() => setTab("vendors")}>Vendors</button>
         <button className={`subtab ${tab === "inspections" ? "active" : ""}`} onClick={() => setTab("inspections")}>Inspections</button>
         <button className={`subtab ${tab === "compliance" ? "active" : ""}`} onClick={() => setTab("compliance")}>Compliance</button>
@@ -152,7 +165,7 @@ export default function Operations() {
               </div>
               <div className="meta">
                 {CAT_LABEL[w.category]}
-                {w.recurrence !== "none" ? ` · repeats ${w.recurrence}` : ""}
+                {w.recurrence !== "none" ? ` · repeats ${w.recurrence} (${w.recurrenceMode === "fixed" ? "calendar" : "on completion"})` : ""}
                 {w.assetName ? ` · ${w.assetName}` : ""}
                 {w.vendorName ? ` · ${w.vendorName}` : ""}
                 {w.scheduledFor ? ` · due ${w.scheduledFor}` : ""}
@@ -169,6 +182,38 @@ export default function Operations() {
               </div>
             </div>
           ))}
+        </>
+      )}
+
+      {tab === "rent" && (
+        <>
+          <div className="sec-label">Rent roll</div>
+          {rentSummary && (rentSummary.outstandingCount > 0
+            ? <div className="hint" style={{ margin: "0 4px 10px" }}>{rentSummary.outstandingCount} outstanding · {inr(rentSummary.outstanding)} to collect{rentSummary.overdueCount ? ` · ${rentSummary.overdueCount} overdue` : ""}</div>
+            : <div className="hint" style={{ margin: "0 4px 10px" }}>All rent collected. New lines open automatically each month.</div>)}
+          {rentRoll.length === 0 && <div className="empty">No rented properties. Set a monthly rent on a property (Assets) and its rent line appears here each month.</div>}
+          {rentRoll.map((rc) => {
+            const overdue = rc.status === "due" && new Date(`${rc.periodMonth}T00:00:00`) < new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+            return (
+              <div className="row-item" key={rc.id}>
+                <div className="h">
+                  <span className="t">{rc.assetName ?? "Property"} · {monthLabel(rc.periodMonth)}</span>
+                  <span className={`pill ${rc.status === "collected" ? "p-good" : overdue ? "p-bad" : "p-warn"}`}>
+                    {rc.status === "collected" ? "collected" : overdue ? "overdue" : "due"}
+                  </span>
+                </div>
+                <div className="meta">
+                  {inr(rc.netDue)} net{rc.tds > 0 ? ` (${inr(rc.amountDue)} − ${inr(rc.tds)} TDS)` : ""}
+                  {rc.status === "collected" && rc.collectedOn ? ` · collected ${rc.collectedOn}${rc.collected != null ? ` · ${inr(rc.collected)}` : ""}` : ""}
+                </div>
+                <div className="acts">
+                  {rc.status !== "collected"
+                    ? <button className="btn small primary" onClick={() => collectRent(rc)}>Mark collected</button>
+                    : <button className="btn ghost small" onClick={() => undoRent(rc)}>Undo</button>}
+                </div>
+              </div>
+            );
+          })}
         </>
       )}
 
