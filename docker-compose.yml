@@ -27,6 +27,7 @@ services:
       - ./apps/api/db/memberships.sql:/docker-entrypoint-initdb.d/14-memberships.sql:ro
       - ./apps/api/db/asset_photos.sql:/docker-entrypoint-initdb.d/15-asset_photos.sql:ro
       - ./apps/api/db/notifications.sql:/docker-entrypoint-initdb.d/16-notifications.sql:ro
+      - ./apps/api/db/recurrence_rent.sql:/docker-entrypoint-initdb.d/17-recurrence_rent.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U kunatra -d kunatra"]
       interval: 3s

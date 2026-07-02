@@ -41,6 +41,7 @@ const CATEGORIES = ['repair', 'maintenance', 'amc', 'improvement', 'other'] as c
 const STATUSES = ['open', 'in_progress', 'done', 'cancelled'] as const;
 const RATINGS = ['good', 'fair', 'poor'] as const;
 const RECUR = ['none', 'monthly', 'quarterly', 'yearly'] as const;
+const RECUR_MODE = ['on_completion', 'fixed'] as const;
 const INTERVAL: Record<string, string> = { monthly: '1 month', quarterly: '3 months', yearly: '1 year' };
 type Status = (typeof STATUSES)[number];
 
@@ -104,6 +105,7 @@ const woRow = (r: any) => ({
   id: r.id, householdId: r.household_id, assetId: r.asset_id ?? null, vendorId: r.vendor_id ?? null,
   assetName: r.asset_name ?? null, vendorName: r.vendor_name ?? null,
   title: r.title, category: r.category, status: r.status, recurrence: r.recurrence,
+  recurrenceMode: r.recurrence_mode ?? 'on_completion', seriesId: r.series_id ?? null,
   scheduledFor: r.scheduled_for ?? null,
   estimatedCost: r.estimated_cost_paise != null ? paiseToRupees(r.estimated_cost_paise) : null,
   actualCost: r.actual_cost_paise != null ? paiseToRupees(r.actual_cost_paise) : null,
@@ -145,10 +147,12 @@ export async function createWorkOrder(householdId: string, body: any) {
   if (status === 'done' && actual == null) {
     throw new HttpError(400, 'closure_requires_cost', 'Closing a work order requires an actual cost');
   }
+  const recurrence = oneOf(body.recurrence, RECUR, 'recurrence', 'none');
+  const recurrenceMode = oneOf(body.recurrenceMode, RECUR_MODE, 'recurrenceMode', 'on_completion');
   const { rows } = await db().query(
     `INSERT INTO work_orders
-       (household_id, asset_id, vendor_id, title, category, status, scheduled_for, estimated_cost_paise, actual_cost_paise, notes, closure_note, recurrence)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
+       (household_id, asset_id, vendor_id, title, category, status, scheduled_for, estimated_cost_paise, actual_cost_paise, notes, closure_note, recurrence, recurrence_mode)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
     [householdId, str(body.assetId, 'assetId') ?? null, str(body.vendorId, 'vendorId') ?? null,
      str(body.title, 'title', { required: true }),
      oneOf(body.category, CATEGORIES, 'category', 'repair'), status,
@@ -156,8 +160,10 @@ export async function createWorkOrder(householdId: string, body: any) {
      estimated != null ? rupeesToPaise(estimated) : null,
      actual != null ? rupeesToPaise(actual) : null,
      str(body.notes, 'notes') ?? null, str(body.closureNote, 'closureNote') ?? null,
-     oneOf(body.recurrence, RECUR, 'recurrence', 'none')]
+     recurrence, recurrenceMode]
   );
+  // A recurring task heads its own series (so the sweep can group its occurrences).
+  if (recurrence !== 'none') await db().query(`UPDATE work_orders SET series_id = id WHERE id = $1`, [rows[0].id]);
   return getWorkOrder(rows[0].id);
 }
 
@@ -184,6 +190,7 @@ export async function updateWorkOrder(id: string, body: any) {
     push('status', next);
   }
   if ('recurrence' in body) push('recurrence', oneOf(body.recurrence, RECUR, 'recurrence'));
+  if ('recurrenceMode' in body) push('recurrence_mode', oneOf(body.recurrenceMode, RECUR_MODE, 'recurrenceMode'));
 
   if ('title' in body) push('title', str(body.title, 'title', { required: true }));
   if ('category' in body) push('category', oneOf(body.category, CATEGORIES, 'category'));
@@ -200,13 +207,16 @@ export async function updateWorkOrder(id: string, body: any) {
   vals.push(id);
   await db().query(`UPDATE work_orders SET ${sets.join(', ')} WHERE id = $${vals.length}`, vals);
 
-  // A recurring work order regenerates the next occurrence when it's completed.
+  // 'on_completion' recurrence spawns the next occurrence when this one closes.
+  // ('fixed' recurrence is generated on the calendar by sweepFixedWorkOrders.)
   const recurrence = (body.recurrence != null ? body.recurrence : current.recurrence) as string;
-  if (closedNow && recurrence !== 'none') {
+  const mode = (body.recurrenceMode != null ? body.recurrenceMode : current.recurrence_mode) as string;
+  if (closedNow && recurrence !== 'none' && mode === 'on_completion') {
     await db().query(
-      `INSERT INTO work_orders (household_id, asset_id, vendor_id, title, category, status, scheduled_for, estimated_cost_paise, notes, recurrence)
+      `INSERT INTO work_orders (household_id, asset_id, vendor_id, title, category, status, scheduled_for, estimated_cost_paise, notes, recurrence, recurrence_mode, series_id)
        SELECT household_id, asset_id, vendor_id, title, category, 'open',
-              COALESCE(scheduled_for, current_date) + $2::interval, estimated_cost_paise, notes, $3::recurrence
+              COALESCE(scheduled_for, current_date) + $2::interval, estimated_cost_paise, notes, $3::recurrence,
+              recurrence_mode, COALESCE(series_id, id)
          FROM work_orders WHERE id = $1`,
       [id, INTERVAL[recurrence], recurrence]
     );
@@ -217,6 +227,48 @@ export async function updateWorkOrder(id: string, body: any) {
 export async function deleteWorkOrder(id: string) {
   const { rowCount } = await db().query(`DELETE FROM work_orders WHERE id = $1`, [id]);
   if (rowCount === 0) throw new HttpError(404, 'work_order_not_found');
+}
+
+/**
+ * Calendar-driven recurrence: for every 'fixed' recurring series, materialize an
+ * open occurrence for each period whose scheduled date has arrived — independent
+ * of whether the prior one was completed. Runs daily (and on startup).
+ */
+export async function sweepFixedWorkOrders(): Promise<void> {
+  if (!process.env.DATABASE_URL) return;
+  try {
+    // The latest occurrence of each fixed series is the template we copy forward.
+    const { rows: series } = await db().query(
+      `SELECT DISTINCT ON (series_id)
+              series_id, household_id, asset_id, vendor_id, title, category,
+              estimated_cost_paise, notes, recurrence, scheduled_for
+         FROM work_orders
+        WHERE recurrence <> 'none' AND recurrence_mode = 'fixed'
+          AND series_id IS NOT NULL AND scheduled_for IS NOT NULL
+        ORDER BY series_id, scheduled_for DESC`
+    );
+    let made = 0;
+    for (const s of series) {
+      let cur = s.scheduled_for as string;
+      const iv = INTERVAL[s.recurrence as string];
+      // Generate every period up to today (guarded so we never loop unbounded).
+      for (let i = 0; i < 240; i++) {
+        const nx = await db().query(
+          `SELECT ($1::date + $2::interval)::date AS d, ($1::date + $2::interval) <= current_date AS due`, [cur, iv]);
+        if (!nx.rows[0].due) break;
+        const next = nx.rows[0].d as string;
+        await db().query(
+          `INSERT INTO work_orders (household_id, asset_id, vendor_id, title, category, status, scheduled_for, estimated_cost_paise, notes, recurrence, recurrence_mode, series_id)
+           VALUES ($1,$2,$3,$4,$5,'open',$6,$7,$8,$9,'fixed',$10)`,
+          [s.household_id, s.asset_id, s.vendor_id, s.title, s.category, next, s.estimated_cost_paise, s.notes, s.recurrence, s.series_id]
+        );
+        made++; cur = next;
+      }
+    }
+    if (made) console.log(`[recurrence] generated ${made} fixed work-order occurrence(s)`);
+  } catch (e: any) {
+    console.error(`[recurrence] fixed-work-order sweep failed: ${e?.message}`);
+  }
 }
 
 // ---- inspections ----------------------------------------------------------

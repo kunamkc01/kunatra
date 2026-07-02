@@ -5,6 +5,7 @@ import { loadPosition, memberAssessments, assetDetail } from './db.ts';
 import { HttpError } from './pool.ts';
 import * as repo from './repo.ts';
 import * as ops from './ops.ts';
+import * as rent from './rent.ts';
 import * as auth from './auth.ts';
 import * as compliance from './compliance.ts';
 import * as approvals from './approvals.ts';
@@ -135,6 +136,12 @@ app.post('/api/households/:id/inspections', sameHousehold, editOps, h(async (req
 app.delete('/api/inspections/:id', scopeResource('inspections'), editOps, h(async (req, res) => { await ops.deleteInspection(req.params.id); res.sendStatus(204); }));
 app.get('/api/households/:id/operations/summary', sameHousehold, h(async (req, res) => res.json(await ops.operationsSummary(req.params.id))));
 
+// ---- rent roll (calendar-generated; owner/manager/operations collect) ----
+app.get('/api/households/:id/rent', sameHousehold, h(async (req, res) => res.json(await rent.listRentCollections(req.params.id))));
+app.get('/api/households/:id/rent/summary', sameHousehold, h(async (req, res) => res.json(await rent.rentSummary(req.params.id))));
+app.post('/api/rent/:id/collect', scopeResource('rent_collections'), editOps, h(async (req, res) => res.json(await rent.collectRent(req.params.id, req.body))));
+app.patch('/api/rent/:id', scopeResource('rent_collections'), editOps, h(async (req, res) => res.json(await rent.updateRent(req.params.id, req.body))));
+
 // ---- family members (owner/manager manage the list; a member edits only self) --
 app.get('/api/households/:id/members', sameHousehold, h(async (req, res) => {
   const list = await repo.listMembers(req.params.id);
@@ -189,6 +196,7 @@ if (isMain) {
   app.listen(port, () => console.log(`Kunatra API on :${port}`));
   // Compliance reminders: sweep on startup, then twice a day (the reminded_on
   // guard keeps it to one notification per item per day).
-  remindDueCompliance();
-  setInterval(remindDueCompliance, 12 * 60 * 60 * 1000).unref();
+  const dailySweeps = () => { remindDueCompliance(); rent.generateRentDue(); ops.sweepFixedWorkOrders(); };
+  dailySweeps();
+  setInterval(dailySweeps, 12 * 60 * 60 * 1000).unref();
 }
