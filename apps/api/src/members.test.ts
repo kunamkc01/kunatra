@@ -34,8 +34,8 @@ test('family members', { skip: hasDb ? false : 'DATABASE_URL not set' }, async (
     householdId = reg.body.user.householdId;
 
     await t.test('members aggregate to the household income', async () => {
-      memberA = (await call('POST', `/api/households/${householdId}/members`, { name: 'A', monthlyIncome: 100000, monthlyEssential: 30000 }, ownerTok)).body.id;
-      await call('POST', `/api/households/${householdId}/members`, { name: 'B', monthlyIncome: 60000 }, ownerTok);
+      memberA = (await call('POST', `/api/households/${householdId}/members`, { name: 'A', monthlyGross: 100000 }, ownerTok)).body.id;
+      await call('POST', `/api/households/${householdId}/members`, { name: 'B', monthlyGross: 60000 }, ownerTok);
       // A ₹50L asset + a ₹32k EMI loan → household income should be 160000 (100k+60k) → EMI 20%.
       assetId = (await call('POST', `/api/households/${householdId}/assets`, { name: 'Flat', assetClass: 'real_estate', value: 5000000, liquid: false }, ownerTok)).body.id;
       await call('POST', `/api/households/${householdId}/loans`, { name: 'Home', outstanding: 3000000, emiMonthly: 32000 }, ownerTok);
@@ -66,7 +66,8 @@ test('family members', { skip: hasDb ? false : 'DATABASE_URL not set' }, async (
       const list = (await call('GET', `/api/households/${householdId}/members`, undefined, opsTok)).body;
       assert.equal(list.length, 2);
       assert.equal(list[0].name != null, true);
-      assert.equal(list[0].monthlyIncome, null); // income hidden
+      assert.equal(list[0].monthlyNet, null); // income hidden
+      assert.equal(list[0].monthlyGross, null);
     });
 
     await t.test('operations cannot add members or see per-member exposure', async () => {

@@ -1,7 +1,7 @@
 import { assess, type Position, type Asset, type Loan, type AssetClass, type Assessment } from '@atlas/engine';
 import { pool, paiseToRupees, HttpError } from './pool.ts';
 
-interface Member { id: string; name: string; income?: number; essential?: number; }
+interface Member { id: string; name: string; net?: number; }
 interface Loaded {
   assets: Asset[];
   loans: Loan[];
@@ -21,7 +21,7 @@ async function load(householdId: string): Promise<Loaded> {
 
   const [assetsR, loansR, hhR, contribR, membersR] = await Promise.all([
     pool.query(
-      `SELECT id, name, asset_class, current_value_paise, liquid, cost_basis_paise, monthly_contribution_paise, member_id, monthly_rent_paise
+      `SELECT id, name, asset_class, current_value_paise, liquid, cost_basis_paise, monthly_contribution_paise, member_id, monthly_rent_paise, monthly_rent_tds_paise
          FROM assets WHERE household_id = $1`,
       [householdId]
     ),
@@ -36,7 +36,7 @@ async function load(householdId: string): Promise<Loaded> {
          FROM contributions c JOIN assets a ON a.id = c.asset_id WHERE a.household_id = $1`,
       [householdId]
     ),
-    pool.query(`SELECT id, name, monthly_income_paise, monthly_essential_paise FROM members WHERE household_id = $1`, [householdId]),
+    pool.query(`SELECT id, name, monthly_gross_paise, monthly_tds_paise FROM members WHERE household_id = $1`, [householdId]),
   ]);
 
   if (hhR.rowCount === 0) throw new HttpError(404, 'household_not_found');
@@ -60,6 +60,7 @@ async function load(householdId: string): Promise<Loaded> {
       costBasis: r.cost_basis_paise != null ? paiseToRupees(r.cost_basis_paise) : undefined,
       monthlyContribution: r.monthly_contribution_paise != null ? paiseToRupees(r.monthly_contribution_paise) : undefined,
       monthlyRent: r.monthly_rent_paise != null ? paiseToRupees(r.monthly_rent_paise) : undefined,
+      rentTds: r.monthly_rent_tds_paise != null ? paiseToRupees(r.monthly_rent_tds_paise) : undefined,
       contributions: contribByAsset.get(r.id),
     };
   });
@@ -77,24 +78,20 @@ async function load(householdId: string): Promise<Loaded> {
     };
   });
 
-  const members: Member[] = membersR.rows.map((r) => ({
-    id: r.id,
-    name: r.name,
-    income: r.monthly_income_paise != null ? paiseToRupees(r.monthly_income_paise) : undefined,
-    essential: r.monthly_essential_paise != null ? paiseToRupees(r.monthly_essential_paise) : undefined,
-  }));
+  const members: Member[] = membersR.rows.map((r) => {
+    const gross = r.monthly_gross_paise != null ? paiseToRupees(r.monthly_gross_paise) : undefined;
+    const tds = r.monthly_tds_paise != null ? paiseToRupees(r.monthly_tds_paise) : 0;
+    return { id: r.id, name: r.name, net: gross != null ? gross - tds : undefined };
+  });
 
-  // Household income aggregates from members when any member records income;
-  // otherwise fall back to the household's own single figure.
+  // Net salary aggregates from members when any records income; else the household's
+  // own take-home. Essentials are always household-level (shared spend).
   const hh = hhR.rows[0];
-  const anyIncome = members.some((m) => m.income != null);
-  const anyEssential = members.some((m) => m.essential != null);
+  const anyIncome = members.some((m) => m.net != null);
   const hhIncome = anyIncome
-    ? members.reduce((s, m) => s + (m.income ?? 0), 0)
+    ? members.reduce((s, m) => s + (m.net ?? 0), 0)
     : hh.monthly_take_home_paise != null ? paiseToRupees(hh.monthly_take_home_paise) : undefined;
-  const hhEssential = anyEssential
-    ? members.reduce((s, m) => s + (m.essential ?? 0), 0)
-    : hh.monthly_essential_paise != null ? paiseToRupees(hh.monthly_essential_paise) : undefined;
+  const hhEssential = hh.monthly_essential_paise != null ? paiseToRupees(hh.monthly_essential_paise) : undefined;
 
   return { assets, loans, assetMember, loanMember, members, hhIncome, hhEssential };
 }
@@ -118,17 +115,17 @@ export async function loadPosition(householdId: string): Promise<Position> {
 export async function memberAssessments(
   householdId: string,
   asOf?: Date | string
-): Promise<{ id: string; name: string; monthlyIncome: number | null; monthlyEssential: number | null; assessment: Assessment }[]> {
+): Promise<{ id: string; name: string; monthlyIncome: number | null; assessment: Assessment }[]> {
   const l = await load(householdId);
   return l.members.map((m) => {
     const assets = l.assets.filter((a) => l.assetMember.get(a.id) === m.id);
     const loans = l.loans.filter((ln) => l.loanMember.get(ln.id) === m.id);
-    const pos = toPosition(assets, loans, m.income, m.essential);
+    // Member's own net salary; essentials stay household-level, so omit here.
+    const pos = toPosition(assets, loans, m.net, undefined);
     return {
       id: m.id,
       name: m.name,
-      monthlyIncome: m.income ?? null,
-      monthlyEssential: m.essential ?? null,
+      monthlyIncome: m.net ?? null,
       assessment: assess(pos, asOf),
     };
   });

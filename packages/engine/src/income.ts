@@ -9,6 +9,7 @@ const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
  */
 export function income(p: Position): IncomeBreakdown {
   const earned = p.income?.monthlyTakeHome ?? 0;
-  const fromAssets = sum(p.assets.map((a) => a.monthlyRent ?? 0));
+  // Rent net of TDS — the cash that actually lands.
+  const fromAssets = sum(p.assets.map((a) => Math.max(0, (a.monthlyRent ?? 0) - (a.rentTds ?? 0))));
   return { earned, fromAssets, total: earned + fromAssets };
 }

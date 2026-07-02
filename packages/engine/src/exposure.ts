@@ -17,10 +17,12 @@ export function exposure(p: Position): Exposure {
   const totalEmi = sum(p.loans.map((l) => l.emiMonthly));
   const liquid = sum(p.assets.filter((a) => a.liquid).map((a) => a.value));
 
-  const income = p.income?.monthlyTakeHome ?? null;
+  const earned = p.income?.monthlyTakeHome ?? 0;
   const essential = p.expenses?.monthlyEssential ?? 0;
   const monthlyOutflow = totalEmi + essential;
-  const monthlyRent = sum(p.assets.map((a) => a.monthlyRent ?? 0));
+  // Rent net of TDS — what actually lands. Used for income and coverage.
+  const monthlyRent = sum(p.assets.map((a) => Math.max(0, (a.monthlyRent ?? 0) - (a.rentTds ?? 0))));
+  const totalIncome = earned + monthlyRent;
 
   const top = [...p.assets].sort((a, b) => b.value - a.value)[0];
 
@@ -29,7 +31,8 @@ export function exposure(p: Position): Exposure {
     realEstateDebt,
     realEstateLTV: realEstateValue ? (realEstateDebt / realEstateValue) * 100 : null,
     debtToAssets: grossAssets ? (totalDebt / grossAssets) * 100 : 0,
-    emiToIncome: income ? (totalEmi / income) * 100 : null,
+    // EMI against ALL income (salary + rent), the true debt-service ratio.
+    emiToIncome: totalIncome > 0 ? (totalEmi / totalIncome) * 100 : null,
     monthlyRent,
     dscr: totalEmi > 0 ? monthlyRent / totalEmi : null,
     runwayMonths: monthlyOutflow > 0 ? liquid / monthlyOutflow : null,

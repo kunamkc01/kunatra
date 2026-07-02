@@ -57,6 +57,7 @@ export function AssetSheet({
   const [monthly, setMonthly] = useState(existing?.monthlyContribution != null ? String(existing.monthlyContribution) : "");
   const [usage, setUsage] = useState<"live_in" | "rented">(existing && (existing.monthlyRent ?? 0) > 0 ? "rented" : "live_in");
   const [rent, setRent] = useState(existing?.monthlyRent != null ? String(existing.monthlyRent) : "");
+  const [rentTds, setRentTds] = useState(existing?.rentTds != null ? String(existing.rentTds) : "");
 
   // Property specifics.
   const re = existing?.realEstate;
@@ -101,6 +102,7 @@ export function AssetSheet({
       costBasis,
       monthlyContribution: group === "recurring" ? (monthlyAmt ?? null) : null,
       monthlyRent: group === "property" && usage === "rented" ? (rent ? Number(rent) : null) : null,
+      rentTds: group === "property" && usage === "rented" ? (rentTds ? Number(rentTds) : null) : null,
       ...(group === "property"
         ? { realEstate: { address, sqft: sqft ? Number(sqft) : null, undividedShare, ptin, carPark: re?.carPark ?? null, carParkSize: re?.carParkSize ?? null } }
         : {}),
@@ -177,12 +179,22 @@ export function AssetSheet({
               </div>
               {usage === "rented" && (
                 <div className="field">
-                  <label>Rent (₹/month)</label>
+                  <label>Rent — gross (₹/month)</label>
                   <input inputMode="numeric" value={rent} onChange={(e) => setRent(e.target.value)} placeholder="28000" />
-                  <div className="hint">Drives rent-vs-EMI (DSCR)</div>
                 </div>
               )}
             </div>
+            {usage === "rented" && (
+              <div className="row2">
+                <div className="field">
+                  <label>TDS on rent (₹/month)</label>
+                  <input inputMode="numeric" value={rentTds} onChange={(e) => setRentTds(e.target.value)} placeholder="tax withheld" />
+                </div>
+                <div className="field" style={{ display: "flex", alignItems: "flex-end" }}>
+                  <div className="hint">Net rent {rent ? inr(Number(rent) - (rentTds ? Number(rentTds) : 0)) : "—"}/mo · drives income & DSCR</div>
+                </div>
+              </div>
+            )}
           </>
         )}
 

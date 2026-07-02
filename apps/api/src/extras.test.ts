@@ -31,14 +31,16 @@ test('DSCR, compliance & audit', { skip: hasDb ? false : 'DATABASE_URL not set' 
     ownerTok = reg.body.token;
     householdId = reg.body.user.householdId;
 
-    await t.test('DSCR = rent ÷ EMI on a let property', async () => {
+    await t.test('DSCR uses rent net of TDS ÷ EMI', async () => {
       const flat = (await call('POST', `/api/households/${householdId}/assets`,
-        { name: 'Let flat', assetClass: 'real_estate', value: 10000000, liquid: false, monthlyRent: 40000 }, ownerTok)).body;
+        { name: 'Let flat', assetClass: 'real_estate', value: 10000000, liquid: false, monthlyRent: 40000, rentTds: 5000 }, ownerTok)).body;
+      assert.equal(flat.rentTds, 5000);
       await call('POST', `/api/households/${householdId}/loans`,
         { name: 'Home', outstanding: 6000000, emiMonthly: 50000, securedAssetId: flat.id }, ownerTok);
-      const ex = (await call('GET', `/api/households/${householdId}/assessment`, undefined, ownerTok)).body.exposure;
-      assert.equal(ex.monthlyRent, 40000);
-      assert.ok(Math.abs(ex.dscr - 0.8) < 1e-9); // 40k / 50k
+      const a = (await call('GET', `/api/households/${householdId}/assessment`, undefined, ownerTok)).body;
+      assert.equal(a.exposure.monthlyRent, 35000);        // 40k gross − 5k TDS
+      assert.ok(Math.abs(a.exposure.dscr - 0.7) < 1e-9);  // 35k / 50k
+      assert.equal(a.income.fromAssets, 35000);           // net rent in the income breakdown
     });
 
     let itemId = '';

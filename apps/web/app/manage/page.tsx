@@ -56,7 +56,12 @@ export default function Assets() {
   const securedFor = (assetId: string) => loans.filter((l) => l.securedAssetId === assetId).reduce((s, l) => s + l.outstanding, 0);
   const gross = assets.reduce((s, a) => s + a.value, 0);
   const totalEmi = loans.reduce((s, l) => s + l.emiMonthly, 0);
-  const income = household?.monthlyTakeHome ?? null;
+  // Income: net salary (members, else household take-home) + net rent.
+  const memberNet = members.reduce((s, m) => s + (m.monthlyNet ?? 0), 0);
+  const hasMembersIncome = members.some((m) => m.monthlyNet != null);
+  const salaryNet = hasMembersIncome ? memberNet : (household?.monthlyTakeHome ?? 0);
+  const netRent = assets.reduce((s, a) => s + Math.max(0, (a.monthlyRent ?? 0) - (a.rentTds ?? 0)), 0);
+  const income = salaryNet + netRent;
   const assetName = (id: string | null) => assets.find((a) => a.id === id)?.name;
   const memberName = (id: string | null) => members.find((m) => m.id === id)?.name;
   async function removeMember(m: Member) {
@@ -148,11 +153,11 @@ export default function Assets() {
             <div className="row-item" key={m.id}>
               <div className="h">
                 <span className="t">{m.name}</span>
-                <span className="tnum">{m.monthlyIncome != null ? `${inr(m.monthlyIncome)}/mo` : "no income set"}</span>
+                <span className="tnum">{m.monthlyNet != null ? `${inr(m.monthlyNet)}/mo net` : "no income set"}</span>
               </div>
               <div className="meta">
                 {assets.filter((a) => a.memberId === m.id).length} asset(s)
-                {m.monthlyEssential != null ? ` · essentials ${inr(m.monthlyEssential)}/mo` : ""}
+                {m.monthlyGross != null ? ` · gross ${inr(m.monthlyGross)}${m.monthlyTds ? ` − TDS ${inr(m.monthlyTds)}` : ""}` : ""}
               </div>
               {isOwner && (
                 <div className="acts">
@@ -162,9 +167,9 @@ export default function Assets() {
               )}
             </div>
           ))}
-          {members.some((m) => m.monthlyIncome != null) && (
+          {hasMembersIncome && (
             <div className="hint" style={{ margin: "2px 4px 0" }}>
-              Household take-home = {inr(members.reduce((s, m) => s + (m.monthlyIncome ?? 0), 0))}/mo (sum of members).
+              Household take-home = {inr(memberNet)}/mo net (sum of members).
             </div>
           )}
 
@@ -191,7 +196,7 @@ export default function Assets() {
           ))}
 
           {/* Cash flow */}
-          <CashflowPanel household={household} onSaved={refresh} readOnly={!isOwner} />
+          <CashflowPanel household={household} onSaved={refresh} readOnly={!isOwner} membersDriveIncome={hasMembersIncome} />
         </>
       )}
 
@@ -216,7 +221,7 @@ export default function Assets() {
   );
 }
 
-function CashflowPanel({ household, onSaved, readOnly = false }: { household: Household | null; onSaved: () => void; readOnly?: boolean }) {
+function CashflowPanel({ household, onSaved, readOnly = false, membersDriveIncome = false }: { household: Household | null; onSaved: () => void; readOnly?: boolean; membersDriveIncome?: boolean }) {
   const [takeHome, setTakeHome] = useState("");
   const [essential, setEssential] = useState("");
   const [busy, setBusy] = useState(false);
@@ -234,8 +239,8 @@ function CashflowPanel({ household, onSaved, readOnly = false }: { household: Ho
     setBusy(true); setSaved(false);
     try {
       await api.updateHousehold(household!.id, {
-        monthlyTakeHome: takeHome ? Number(takeHome) : null,
         monthlyEssential: essential ? Number(essential) : null,
+        ...(membersDriveIncome ? {} : { monthlyTakeHome: takeHome ? Number(takeHome) : null }),
       });
       setSaved(true); onSaved();
     } finally { setBusy(false); }
@@ -243,11 +248,17 @@ function CashflowPanel({ household, onSaved, readOnly = false }: { household: Ho
 
   return (
     <form className="panel" onSubmit={save} style={{ marginTop: 18 }}>
-      <h3>Monthly cash flow</h3>
-      <p className="desc">Drives EMI-strain and how many months your savings would last.</p>
+      <h3>Monthly spending</h3>
+      <p className="desc">
+        {membersDriveIncome
+          ? "Income comes from your members (salary) and let properties (rent). Set your household essentials here — it drives runway and surplus."
+          : "Your take-home and essentials — drives EMI-strain, runway and surplus. Add family members to split salary out per person."}
+      </p>
       <div className="row2">
-        <div className="field"><label>Take-home (₹)</label><input inputMode="numeric" value={takeHome} disabled={readOnly} onChange={(e) => { setTakeHome(e.target.value); setSaved(false); }} placeholder="140000" /></div>
-        <div className="field"><label>Essentials (₹)</label><input inputMode="numeric" value={essential} disabled={readOnly} onChange={(e) => { setEssential(e.target.value); setSaved(false); }} placeholder="50000" /></div>
+        {!membersDriveIncome && (
+          <div className="field"><label>Take-home (₹)</label><input inputMode="numeric" value={takeHome} disabled={readOnly} onChange={(e) => { setTakeHome(e.target.value); setSaved(false); }} placeholder="140000" /></div>
+        )}
+        <div className="field"><label>Essentials (₹/mo)</label><input inputMode="numeric" value={essential} disabled={readOnly} onChange={(e) => { setEssential(e.target.value); setSaved(false); }} placeholder="50000" /></div>
       </div>
       {!readOnly && (
         <div className="actions">

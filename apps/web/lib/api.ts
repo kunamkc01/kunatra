@@ -36,16 +36,16 @@ export interface Member {
   id: string;
   householdId: string;
   name: string;
-  monthlyIncome: number | null;
-  monthlyEssential: number | null;
+  monthlyGross: number | null;
+  monthlyTds: number | null;
+  monthlyNet: number | null;
   createdAt?: string;
 }
 
 export interface MemberAssessment {
   id: string;
   name: string;
-  monthlyIncome: number | null;
-  monthlyEssential: number | null;
+  monthlyIncome: number | null; // net take-home
   assessment: Assessment;
 }
 
@@ -61,6 +61,7 @@ export interface Asset {
   costBasis: number | null;
   monthlyContribution: number | null;
   monthlyRent: number | null;
+  rentTds: number | null;
   acquiredHow: string | null;
   acquiredYear: number | null;
   realEstate: RealEstate | null;
@@ -263,9 +264,9 @@ export const api = {
 
   // family members
   listMembers: (id: string) => req<Member[]>(`/api/households/${id}/members`),
-  createMember: (id: string, b: { name: string; monthlyIncome?: number; monthlyEssential?: number }) =>
+  createMember: (id: string, b: { name: string; monthlyGross?: number; monthlyTds?: number }) =>
     req<Member>(`/api/households/${id}/members`, { method: "POST", body: JSON.stringify(b) }),
-  updateMember: (memberId: string, b: Partial<{ name: string; monthlyIncome: number | null; monthlyEssential: number | null }>) =>
+  updateMember: (memberId: string, b: Partial<{ name: string; monthlyGross: number | null; monthlyTds: number | null }>) =>
     req<Member>(`/api/members/${memberId}`, { method: "PATCH", body: JSON.stringify(b) }),
   deleteMember: (memberId: string) => req<void>(`/api/members/${memberId}`, { method: "DELETE" }),
   memberAssessments: (id: string) => req<MemberAssessment[]>(`/api/households/${id}/members/assessment`),

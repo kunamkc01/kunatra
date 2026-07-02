@@ -31,8 +31,10 @@ export interface Asset {
   monthlyContribution?: number;
   /** Dated cash flows for return maths. amount>0 = invested, amount<0 = withdrawn (rupees). */
   contributions?: { amount: number; on: string }[];
-  /** Monthly rent this asset brings in (let property), in rupees. Drives DSCR. Optional. */
+  /** Gross monthly rent this asset brings in (let property), in rupees. Optional. */
   monthlyRent?: number;
+  /** TDS withheld on the rent each month, in rupees. Net rent = monthlyRent − rentTds. Optional. */
+  rentTds?: number;
 }
 
 export interface Loan {

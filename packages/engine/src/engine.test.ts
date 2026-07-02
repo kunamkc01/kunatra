@@ -42,6 +42,17 @@ test('dscr = monthly rent / total EMI', () => {
   assert.ok(Math.abs((ex.dscr ?? 0) - 0.8) < 1e-9);
 });
 
+test('rent nets TDS, and EMI is measured against total income', () => {
+  const ex = exposure({
+    assets: [{ id: 'flat', name: 'Let', assetClass: 'real_estate', value: 10_000_000, liquid: false, monthlyRent: 50_000, rentTds: 5_000 }],
+    loans: [{ id: 'l', name: 'Home', outstanding: 5_000_000, emiMonthly: 45_000, securedAgainstAssetId: 'flat' }],
+    income: { monthlyTakeHome: 100_000 },
+  });
+  assert.equal(ex.monthlyRent, 45_000);                 // 50k gross − 5k TDS
+  assert.ok(Math.abs((ex.emiToIncome ?? 0) - 31.03) < 0.1); // 45k EMI / (100k + 45k) total
+  assert.ok(Math.abs((ex.dscr ?? 0) - 1.0) < 1e-9);     // 45k net rent / 45k EMI
+});
+
 test('income splits salary (earned) from asset income (rent), with surplus', () => {
   const a = assess({
     assets: [

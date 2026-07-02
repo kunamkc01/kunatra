@@ -110,7 +110,7 @@ export default function Portfolio() {
               <div className={`tile ${tileClass(byKey("ltv")?.severity)}`}><div className="tl">Real-estate LTV</div><div className="tv num" style={{ fontSize: 21, marginTop: 4 }}>{ex.realEstateLTV.toFixed(0)}%</div></div>
             )}
             {ex?.emiToIncome != null ? (
-              <div className={`tile ${tileClass(byKey("emi")?.severity)}`}><div className="tl">EMI vs salary</div><div className="tv num" style={{ fontSize: 21, marginTop: 4 }}>{ex.emiToIncome.toFixed(0)}%</div></div>
+              <div className={`tile ${tileClass(byKey("emi")?.severity)}`}><div className="tl">EMI vs income</div><div className="tv num" style={{ fontSize: 21, marginTop: 4 }}>{ex.emiToIncome.toFixed(0)}%</div></div>
             ) : ex?.runwayMonths != null ? (
               <div className={`tile ${tileClass(byKey("runway")?.severity)}`}><div className="tl">Emergency runway</div><div className="tv num" style={{ fontSize: 21, marginTop: 4 }}>{ex.runwayMonths.toFixed(1)} mo</div></div>
             ) : null}

@@ -111,7 +111,7 @@ export function signals(p: Position, asOf?: Date | string): Signal[] {
       value: v,
       display: `${v.toFixed(0)}%`,
       severity: band(v, 30, 40),
-      message: `EMIs take ${v.toFixed(0)}% of your take-home pay.`,
+      message: `EMIs take ${v.toFixed(0)}% of your total monthly income.`,
     });
   }
 

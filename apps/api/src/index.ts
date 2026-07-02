@@ -128,7 +128,7 @@ app.get('/api/households/:id/operations/summary', sameHousehold, h(async (req, r
 // Operations can see member names (to attribute assets) but not their incomes.
 app.get('/api/households/:id/members', sameHousehold, h(async (req, res) => {
   const list = await repo.listMembers(req.params.id);
-  if (req.user!.role === 'operations') list.forEach((m: any) => { m.monthlyIncome = null; m.monthlyEssential = null; });
+  if (req.user!.role === 'operations') list.forEach((m: any) => { m.monthlyGross = null; m.monthlyTds = null; m.monthlyNet = null; });
   res.json(list);
 }));
 app.post('/api/households/:id/members', sameHousehold, ownerOnly, h(async (req, res) => res.status(201).json(await repo.createMember(req.params.id, req.body))));

@@ -105,14 +105,19 @@ export async function deleteHousehold(id: string) {
 
 // ---- members (family members with their own income) -----------------------
 
-const memberRow = (r: any) => ({
-  id: r.id,
-  householdId: r.household_id,
-  name: r.name,
-  monthlyIncome: r.monthly_income_paise != null ? paiseToRupees(r.monthly_income_paise) : null,
-  monthlyEssential: r.monthly_essential_paise != null ? paiseToRupees(r.monthly_essential_paise) : null,
-  createdAt: r.created_at,
-});
+const memberRow = (r: any) => {
+  const gross = r.monthly_gross_paise != null ? paiseToRupees(r.monthly_gross_paise) : null;
+  const tds = r.monthly_tds_paise != null ? paiseToRupees(r.monthly_tds_paise) : null;
+  return {
+    id: r.id,
+    householdId: r.household_id,
+    name: r.name,
+    monthlyGross: gross,
+    monthlyTds: tds,
+    monthlyNet: gross != null ? gross - (tds ?? 0) : null, // take-home
+    createdAt: r.created_at,
+  };
+};
 
 export async function listMembers(householdId: string) {
   await getHousehold(householdId);
@@ -122,14 +127,14 @@ export async function listMembers(householdId: string) {
 
 export async function createMember(householdId: string, body: any) {
   await getHousehold(householdId);
-  const income = money(body.monthlyIncome, 'monthlyIncome');
-  const essential = money(body.monthlyEssential, 'monthlyEssential');
+  const gross = money(body.monthlyGross, 'monthlyGross');
+  const tds = money(body.monthlyTds, 'monthlyTds');
   const { rows } = await db().query(
-    `INSERT INTO members (household_id, name, monthly_income_paise, monthly_essential_paise)
+    `INSERT INTO members (household_id, name, monthly_gross_paise, monthly_tds_paise)
      VALUES ($1,$2,$3,$4) RETURNING *`,
     [householdId, str(body.name, 'name', { required: true }),
-     income != null ? rupeesToPaise(income) : null,
-     essential != null ? rupeesToPaise(essential) : null]
+     gross != null ? rupeesToPaise(gross) : null,
+     tds != null ? rupeesToPaise(tds) : null]
   );
   return memberRow(rows[0]);
 }
@@ -139,8 +144,8 @@ export async function updateMember(id: string, body: any) {
   const vals: any[] = [];
   const push = (c: string, v: any) => { vals.push(v); sets.push(`${c} = $${vals.length}`); };
   if ('name' in body) push('name', str(body.name, 'name', { required: true }));
-  if ('monthlyIncome' in body) { const v = money(body.monthlyIncome, 'monthlyIncome'); push('monthly_income_paise', v != null ? rupeesToPaise(v) : null); }
-  if ('monthlyEssential' in body) { const v = money(body.monthlyEssential, 'monthlyEssential'); push('monthly_essential_paise', v != null ? rupeesToPaise(v) : null); }
+  if ('monthlyGross' in body) { const v = money(body.monthlyGross, 'monthlyGross'); push('monthly_gross_paise', v != null ? rupeesToPaise(v) : null); }
+  if ('monthlyTds' in body) { const v = money(body.monthlyTds, 'monthlyTds'); push('monthly_tds_paise', v != null ? rupeesToPaise(v) : null); }
   if (sets.length === 0) {
     const { rows } = await db().query(`SELECT * FROM members WHERE id = $1`, [id]);
     if (rows.length === 0) throw new HttpError(404, 'member_not_found');
@@ -171,6 +176,7 @@ const assetRow = (r: any) => ({
   costBasis: r.cost_basis_paise != null ? paiseToRupees(r.cost_basis_paise) : null,
   monthlyContribution: r.monthly_contribution_paise != null ? paiseToRupees(r.monthly_contribution_paise) : null,
   monthlyRent: r.monthly_rent_paise != null ? paiseToRupees(r.monthly_rent_paise) : null,
+  rentTds: r.monthly_rent_tds_paise != null ? paiseToRupees(r.monthly_rent_tds_paise) : null,
   acquiredHow: r.acquired_how ?? null,
   acquiredYear: r.acquired_year ?? null,
   realEstate: r.address != null || r.ptin != null || r.sqft != null
@@ -223,20 +229,22 @@ export async function createAsset(householdId: string, body: any) {
   const costBasis = money(body.costBasis, 'costBasis');
   const monthly = money(body.monthlyContribution, 'monthlyContribution');
   const rent = money(body.monthlyRent, 'monthlyRent');
+  const rentTds = money(body.rentTds, 'rentTds');
 
   const client = await db().connect();
   try {
     await client.query('BEGIN');
     const { rows } = await client.query(
-      `INSERT INTO assets (household_id, name, asset_class, current_value_paise, liquid, cost_basis_paise, monthly_contribution_paise, member_id, monthly_rent_paise, acquired_how, acquired_year)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
+      `INSERT INTO assets (household_id, name, asset_class, current_value_paise, liquid, cost_basis_paise, monthly_contribution_paise, member_id, monthly_rent_paise, acquired_how, acquired_year, monthly_rent_tds_paise)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
       [householdId, name, cls, rupeesToPaise(value), liquid,
        costBasis != null ? rupeesToPaise(costBasis) : null,
        monthly != null ? rupeesToPaise(monthly) : null,
        str(body.memberId, 'memberId') ?? null,
        rent != null ? rupeesToPaise(rent) : null,
        str(body.acquiredHow, 'acquiredHow') ?? null,
-       year(body.acquiredYear, 'acquiredYear')]
+       year(body.acquiredYear, 'acquiredYear'),
+       rentTds != null ? rupeesToPaise(rentTds) : null]
     );
     const id = rows[0].id;
     if (cls === 'real_estate' && body.realEstate) await upsertRealEstate(client, id, body.realEstate);
@@ -264,6 +272,7 @@ export async function updateAsset(id: string, body: any) {
   if ('monthlyContribution' in body) { const m = money(body.monthlyContribution, 'monthlyContribution'); push('monthly_contribution_paise', m != null ? rupeesToPaise(m) : null); }
   if ('memberId' in body) push('member_id', str(body.memberId, 'memberId') ?? null);
   if ('monthlyRent' in body) { const m = money(body.monthlyRent, 'monthlyRent'); push('monthly_rent_paise', m != null ? rupeesToPaise(m) : null); }
+  if ('rentTds' in body) { const m = money(body.rentTds, 'rentTds'); push('monthly_rent_tds_paise', m != null ? rupeesToPaise(m) : null); }
   if ('acquiredHow' in body) push('acquired_how', str(body.acquiredHow, 'acquiredHow') ?? null);
   if ('acquiredYear' in body) push('acquired_year', year(body.acquiredYear, 'acquiredYear'));
 
