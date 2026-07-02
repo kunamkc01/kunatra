@@ -29,13 +29,32 @@ export async function platformStats() {
   };
 }
 
-/** Weekly signups for the last 8 weeks (for a small growth chart). */
-export async function signupsByWeek() {
+/** Weekly counts for the last 8 weeks (for the growth charts). */
+async function byWeek(table: string) {
   const { rows } = await db().query(`
     SELECT to_char(date_trunc('week', created_at), 'YYYY-MM-DD') AS week, count(*) AS n
-      FROM users WHERE created_at > now() - interval '8 weeks'
+      FROM ${table} WHERE created_at > now() - interval '8 weeks'
      GROUP BY 1 ORDER BY 1`);
   return rows.map((r) => ({ week: r.week, count: Number(r.n) }));
+}
+export const signupsByWeek = () => byWeek('users');
+export const assetsByWeek = () => byWeek('assets');
+
+/**
+ * A recent platform activity feed — new users, households and assets. Metadata
+ * only: an asset event shows its class and time, never its value, name or which
+ * household it belongs to. That keeps holdings private even from an admin.
+ */
+export async function recentActivity() {
+  const { rows } = await db().query(`
+    SELECT at, type, detail FROM (
+      (SELECT created_at AS at, 'user'::text AS type, email::text AS detail FROM users ORDER BY created_at DESC LIMIT 20)
+      UNION ALL
+      (SELECT created_at, 'household'::text, display_name::text FROM households ORDER BY created_at DESC LIMIT 20)
+      UNION ALL
+      (SELECT created_at, 'asset'::text, asset_class::text FROM assets ORDER BY created_at DESC LIMIT 30)
+    ) e ORDER BY at DESC LIMIT 40`);
+  return rows.map((r) => ({ at: r.at, type: r.type as 'user' | 'household' | 'asset', detail: r.detail as string }));
 }
 
 /** All users, with identity + membership shape only — no financials. */

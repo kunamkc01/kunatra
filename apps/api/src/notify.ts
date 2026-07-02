@@ -16,6 +16,18 @@ const creds = process.env.NOTIFY_ACCESS_KEY_ID && process.env.NOTIFY_SECRET_ACCE
 const ses = creds ? new SESv2Client({ region: REGION, credentials: creds }) : null;
 const sns = creds ? new SNSClient({ region: REGION, credentials: creds }) : null;
 
+/** One-line description of what a role can do — for welcome/invite emails. */
+export function roleBlurb(role: string): string {
+  switch (role) {
+    case 'owner': return 'As the owner you see everything — net worth, exposure, assets, loans and cash flow — and you manage the team, approvals and household settings.';
+    case 'manager': return "As a manager you look after the money on this household's behalf — assets, loans, cash flow and approvals. You can't change the team or delete the household.";
+    case 'member': return "As a member you manage your own salary and assets, and see the household's overall picture (read-only).";
+    case 'operations': return 'As operations you handle the upkeep — work orders, vendors, inspections, rent collection and the compliance calendar. Financial totals stay hidden from you.';
+    case 'advisor': return 'As an advisor you have read-only access to the full financial picture — net worth, loans and returns — but you cannot make changes.';
+    default: return '';
+  }
+}
+
 /** Send a transactional email. Never throws — logs and moves on. */
 export async function sendEmail(to: string, subject: string, text: string): Promise<void> {
   if (!to) return;

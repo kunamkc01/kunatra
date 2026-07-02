@@ -173,8 +173,9 @@ app.post('/api/approvals/:id/decide', scopeResource('approval_requests'), manage
 app.delete('/api/approvals/:id', scopeResource('approval_requests'), manageMoney, h(async (req, res) => { await approvals.deleteApproval(req.params.id); res.sendStatus(204); }));
 
 // ---- platform admin (app operator; counts only, no household money) -------
-app.get('/api/admin/stats', auth.requireAdmin, h(async (_req, res) => res.json({ ...(await admin.platformStats()), signupsByWeek: await admin.signupsByWeek() })));
+app.get('/api/admin/stats', auth.requireAdmin, h(async (_req, res) => res.json({ ...(await admin.platformStats()), signupsByWeek: await admin.signupsByWeek(), assetsByWeek: await admin.assetsByWeek() })));
 app.get('/api/admin/users', auth.requireAdmin, h(async (_req, res) => res.json(await admin.listAllUsers())));
+app.get('/api/admin/activity', auth.requireAdmin, h(async (_req, res) => res.json(await admin.recentActivity())));
 
 // ---- audit trail (owner only — oversight) --------------------------------
 app.get('/api/households/:id/audit', sameHousehold, ownerOnly, h(async (req, res) => res.json(await listAudit(req.params.id))));

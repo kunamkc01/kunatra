@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
 import { app } from './index.ts';
-import { platformStats, listAllUsers } from './admin.ts';
+import { platformStats, listAllUsers, recentActivity, assetsByWeek } from './admin.ts';
 
 const hasDb = !!process.env.DATABASE_URL;
 const email = (p: string) => `${p}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}@example.com`;
@@ -47,6 +47,18 @@ test('platform admin view', { skip: hasDb ? false : 'DATABASE_URL not set' }, as
       assert.equal(mine!.householdCount, 1);
       assert.ok(Array.isArray(mine!.roles));
       assert.ok(!('assets' in mine!) && !('netWorth' in mine!)); // no holdings
+    });
+
+    await t.test('activity feed + asset trend are metadata only', async () => {
+      const feed = await recentActivity();
+      assert.ok(Array.isArray(feed));
+      for (const e of feed) {
+        assert.ok(['user', 'household', 'asset'].includes(e.type));
+        assert.equal(typeof e.detail, 'string');
+        assert.ok(!('value' in e) && !('amount' in e)); // no money
+      }
+      const trend = await assetsByWeek();
+      assert.ok(Array.isArray(trend) && trend.every((w) => typeof w.count === 'number'));
     });
 
     await t.test('admin endpoints are forbidden to a normal user', async () => {

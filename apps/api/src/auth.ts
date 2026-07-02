@@ -3,7 +3,7 @@
 import crypto from 'node:crypto';
 import type { Request, Response, NextFunction } from 'express';
 import { db, HttpError } from './pool.ts';
-import { sendEmail, appUrl } from './notify.ts';
+import { sendEmail, appUrl, roleBlurb } from './notify.ts';
 
 const SECRET = process.env.AUTH_SECRET ?? 'dev-insecure-secret-change-me';
 const TOKEN_TTL_SEC = 60 * 60 * 24 * 7; // 7 days
@@ -122,6 +122,12 @@ export async function register(body: any) {
     );
     await client.query(`INSERT INTO memberships (user_id, household_id, role) VALUES ($1,$2,'owner')`, [u.rows[0].id, householdId]);
     await client.query('COMMIT');
+    // Welcome the new owner (best-effort; never blocks signup).
+    void sendEmail(email, 'Welcome to Kunatra',
+      `Hi${fullName ? ' ' + fullName : ''}, welcome to Kunatra — a mirror for your money.\n\n` +
+      `You've created the household "${householdName}". ${roleBlurb('owner')}\n\n` +
+      `Get started: ${appUrl}\n\n` +
+      `Kunatra shows you where you stand — it never tells you what to buy, sell or borrow.`);
     return session(u.rows[0].id, householdId);
   } catch (e) {
     await client.query('ROLLBACK');
@@ -328,7 +334,7 @@ export async function createUser(householdId: string, body: any) {
       ? `Sign in at ${appUrl}/login with this email and the temporary password your admin shared, then change it under Profile.`
       : `It's on your existing account — sign in at ${appUrl}/login and switch to it from the household menu.`;
     void sendEmail(email, `You've been given ${role} access on Kunatra`,
-      `You've been added to "${place}" on Kunatra as ${role}.\n\n${signin}`);
+      `You've been added to "${place}" on Kunatra as ${role}.\n\n${roleBlurb(role)}\n\n${signin}`);
     return { ok: true, userId };
   } catch (e: any) {
     await client.query('ROLLBACK');
