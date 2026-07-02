@@ -44,6 +44,11 @@ if ! awsq s3api head-bucket --bucket "$WWW_BUCKET" 2>/dev/null; then
 fi
 save_cfg WWW_BUCKET "$WWW_BUCKET"
 awsq s3 sync "$HERE/www/" "s3://$WWW_BUCKET/" --delete --cache-control "public,max-age=300,must-revalidate"
+# On content re-runs (distribution already exists) bust the edge cache.
+if [[ -n "${WWW_DIST_ID:-}" ]]; then
+  ID=$(awsq cloudfront create-invalidation --distribution-id "$WWW_DIST_ID" --paths '/*' --query 'Invalidation.Id' --output text)
+  echo "  · invalidation $ID created"
+fi
 
 log "Reusing the OAC"
 OAC_ID=$(awsq cloudfront list-origin-access-controls --query "OriginAccessControlList.Items[?Name=='kunatra-oac'].Id | [0]" --output text)

@@ -29,4 +29,15 @@ awsq s3 sync "$REPO/apps/web/out/_next/static/" "s3://$WEB_BUCKET/_next/static/"
   --cache-control "public,max-age=31536000,immutable"
 
 log "Web uploaded to s3://$WEB_BUCKET"
-echo "Next: ./60-cloudfront.sh"
+
+# Invalidate the CDN so the new HTML is served immediately (hashed _next/static
+# assets are immutable, but the page HTML is cached at the edge). Skipped on the
+# first run, before the distribution exists (60-cloudfront.sh creates it).
+if [[ -n "${CF_DIST_ID:-}" ]]; then
+  log "Invalidating CloudFront ($CF_DIST_ID)"
+  ID=$(awsq cloudfront create-invalidation --distribution-id "$CF_DIST_ID" --paths '/*' \
+    --query 'Invalidation.Id' --output text)
+  echo "  · invalidation $ID created"
+else
+  echo "Next: ./60-cloudfront.sh"
+fi
