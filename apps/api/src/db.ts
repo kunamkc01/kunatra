@@ -1,4 +1,4 @@
-import { assess, type Position, type Asset, type Loan, type AssetClass, type Assessment } from '@atlas/engine';
+import { assess, exposure, investments, type Position, type Asset, type Loan, type AssetClass, type Assessment } from '@atlas/engine';
 import { pool, paiseToRupees, HttpError } from './pool.ts';
 
 interface Member { id: string; name: string; net?: number; }
@@ -109,6 +109,72 @@ function toPosition(assets: Asset[], loans: Loan[], income?: number, essential?:
 export async function loadPosition(householdId: string): Promise<Position> {
   const l = await load(householdId);
   return toPosition(l.assets, l.loans, l.hhIncome, l.hhEssential);
+}
+
+/**
+ * A single asset's own picture: engine-computed metrics for the asset (plus any
+ * components nested under it) and the loans secured against it. Reuses the same
+ * pure engine functions as the household assessment, so the numbers agree.
+ */
+export async function assetDetail(assetId: string, asOf?: Date | string) {
+  if (!pool) throw new HttpError(503, 'no_database', 'DATABASE_URL not set');
+
+  const meta = await pool.query(`SELECT household_id, acquired_year FROM assets WHERE id = $1`, [assetId]);
+  if (meta.rowCount === 0) throw new HttpError(404, 'asset_not_found');
+  const householdId = meta.rows[0].household_id;
+  const acquiredYear = meta.rows[0].acquired_year ?? null;
+
+  const l = await load(householdId);
+  const asset = l.assets.find((x) => x.id === assetId);
+  if (!asset) throw new HttpError(404, 'asset_not_found');
+
+  // Components nested under this asset (e.g. solar/lift on a property).
+  const childRows = await pool.query(
+    `SELECT id, name, asset_class, current_value_paise FROM assets WHERE parent_asset_id = $1 ORDER BY name`, [assetId]);
+  const childIds = new Set<string>(childRows.rows.map((r) => r.id));
+  const children = l.assets.filter((x) => childIds.has(x.id));
+  const childrenOut = childRows.rows.map((r) => ({
+    id: r.id, name: r.name, assetClass: r.asset_class as AssetClass, value: paiseToRupees(r.current_value_paise),
+  }));
+
+  const securedLoans = l.loans.filter((ln) => ln.securedAgainstAssetId === assetId);
+  const groupAssets = [asset, ...children];
+  const pos = toPosition(groupAssets, securedLoans, l.hhIncome, undefined);
+  const inv = investments(pos, asOf);
+  const exp = exposure(pos);
+
+  const currentValue = groupAssets.reduce((s, x) => s + x.value, 0);
+  const securedOutstanding = securedLoans.reduce((s, x) => s + x.outstanding, 0);
+  const cb = asset.costBasis ?? null;
+  const nowYear = (asOf ? new Date(asOf) : new Date()).getFullYear();
+  const years = acquiredYear ? Math.max(1, nowYear - acquiredYear) : null;
+  const appreciationCagrPct =
+    cb && cb > 0 && years && currentValue > 0 ? (Math.pow(currentValue / cb, 1 / years) - 1) * 100 : null;
+
+  const ownerId = l.assetMember.get(assetId) ?? null;
+  const ownerName = ownerId ? (l.members.find((m) => m.id === ownerId)?.name ?? null) : null;
+
+  return {
+    ownerName,
+    metrics: {
+      currentValue,
+      costBasis: cb,
+      unrealizedGain: inv.unrealizedGain,
+      gainPct: inv.gainPct,
+      xirrPct: inv.xirrPct,
+      monthlyContribution: inv.monthlyContribution,
+      netRentMonthly: exp.monthlyRent,
+      dscr: exp.dscr,
+      emiToIncomePct: exp.emiToIncome,
+      securedOutstanding,
+      equity: currentValue - securedOutstanding,
+      ltvPct: currentValue > 0 && securedOutstanding > 0 ? (securedOutstanding / currentValue) * 100 : null,
+      appreciationCagrPct,
+      acquiredYear,
+    },
+    securedLoans: securedLoans.map((ln) => ({ id: ln.id, name: ln.name, outstanding: ln.outstanding, emiMonthly: ln.emiMonthly, ratePct: ln.ratePct ?? null })),
+    children: childrenOut,
+  };
 }
 
 /** A per-member assessment: each member's own assets, loans and income run through the engine. */

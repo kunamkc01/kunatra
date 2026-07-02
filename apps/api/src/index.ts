@@ -1,7 +1,7 @@
 import { pathToFileURL } from 'node:url';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import { assess, salariedSample } from '@atlas/engine';
-import { loadPosition, memberAssessments } from './db.ts';
+import { loadPosition, memberAssessments, assetDetail } from './db.ts';
 import { HttpError } from './pool.ts';
 import * as repo from './repo.ts';
 import * as ops from './ops.ts';
@@ -91,6 +91,7 @@ app.get('/api/households/:id/assessment', sameHousehold, financialView, h(async 
 app.get('/api/households/:id/assets', sameHousehold, h(async (req, res) => res.json(await repo.listAssets(req.params.id))));
 app.post('/api/households/:id/assets', sameHousehold, editAssets, forceMemberOwnership, h(async (req, res) => res.status(201).json(await repo.createAsset(req.params.id, req.body))));
 app.get('/api/assets/:id', scopeResource('assets'), h(async (req, res) => res.json(await repo.getAsset(req.params.id))));
+app.get('/api/assets/:id/detail', scopeResource('assets'), h(async (req, res) => res.json(await assetDetail(req.params.id, new Date()))));
 app.patch('/api/assets/:id', editAssets, scopeOwned('assets'), h(async (req, res) => res.json(await repo.updateAsset(req.params.id, req.body))));
 app.delete('/api/assets/:id', requireRole('owner', 'manager', 'member'), scopeOwned('assets'), h(async (req, res) => { await repo.deleteAsset(req.params.id); res.sendStatus(204); }));
 
