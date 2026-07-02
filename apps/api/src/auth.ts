@@ -42,9 +42,9 @@ function verifyPassword(pw: string, stored: string): boolean {
 
 const b64url = (s: string | Buffer) => Buffer.from(s).toString('base64url');
 
-export function signToken(payload: Record<string, unknown>): string {
+export function signToken(payload: Record<string, unknown>, ttlSec = TOKEN_TTL_SEC): string {
   const header = b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
-  const body = b64url(JSON.stringify({ ...payload, exp: Math.floor(Date.now() / 1000) + TOKEN_TTL_SEC }));
+  const body = b64url(JSON.stringify({ ...payload, exp: Math.floor(Date.now() / 1000) + ttlSec }));
   const data = `${header}.${body}`;
   const sig = crypto.createHmac('sha256', SECRET).update(data).digest('base64url');
   return `${data}.${sig}`;
@@ -67,8 +67,16 @@ function verifyToken(token: string): any {
 
 const userRow = (r: any) => ({
   id: r.id, householdId: r.household_id, email: r.email, fullName: r.full_name ?? null,
-  role: r.role as Role, createdAt: r.created_at,
+  role: r.role as Role, avatar: r.avatar ?? null, createdAt: r.created_at,
 });
+
+const MAX_AVATAR = 700_000; // ~500KB image as a data URL
+function avatarOrNull(v: unknown): string | null {
+  if (v == null || v === '') return null;
+  if (typeof v !== 'string' || !v.startsWith('data:image/')) throw new HttpError(400, 'invalid_input', 'avatar must be an image data URL');
+  if (v.length > MAX_AVATAR) throw new HttpError(400, 'avatar_too_large', 'Please choose a smaller image');
+  return v;
+}
 
 const normEmail = (e: unknown) => {
   if (typeof e !== 'string' || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e.trim())) {
@@ -131,6 +139,65 @@ function tokenFor(user: { id: string; householdId: string; role: Role; email: st
   return signToken({ sub: user.id, hh: user.householdId, role: user.role, email: user.email });
 }
 
+/** Update the caller's own profile (name, avatar). */
+export async function updateProfile(userId: string, body: any) {
+  const sets: string[] = [];
+  const vals: any[] = [];
+  const push = (c: string, v: any) => { vals.push(v); sets.push(`${c} = $${vals.length}`); };
+  if ('fullName' in body) push('full_name', typeof body.fullName === 'string' ? body.fullName.trim() || null : null);
+  if ('avatar' in body) push('avatar', avatarOrNull(body.avatar));
+  if (sets.length === 0) return getUserById(userId);
+  vals.push(userId);
+  const { rows } = await db().query(`UPDATE users SET ${sets.join(', ')} WHERE id = $${vals.length} RETURNING *`, vals);
+  if (rows.length === 0) throw new HttpError(404, 'user_not_found');
+  return userRow(rows[0]);
+}
+
+/** Change your own password (needs the current one). */
+export async function changePassword(userId: string, body: any) {
+  const { rows } = await db().query(`SELECT password_hash FROM users WHERE id = $1`, [userId]);
+  if (rows.length === 0) throw new HttpError(404, 'user_not_found');
+  if (!verifyPassword(String(body.currentPassword ?? ''), rows[0].password_hash)) {
+    throw new HttpError(400, 'bad_password', 'Your current password is incorrect');
+  }
+  await db().query(`UPDATE users SET password_hash = $2 WHERE id = $1`, [userId, hashPassword(body.newPassword)]);
+  return { ok: true };
+}
+
+/** Owner sets a teammate's password directly. */
+export async function setPassword(userId: string, newPassword: string) {
+  const { rowCount } = await db().query(`UPDATE users SET password_hash = $2 WHERE id = $1`, [userId, hashPassword(newPassword)]);
+  if (rowCount === 0) throw new HttpError(404, 'user_not_found');
+  return { ok: true };
+}
+
+/**
+ * Begin a forgot-password flow. Always returns ok (never reveals whether the email
+ * exists). No email server is wired up yet — the reset link is logged to the API
+ * console; swap in an email provider here later.
+ */
+export async function requestReset(body: any) {
+  try {
+    const email = normEmail(body.email);
+    const { rows } = await db().query(`SELECT id FROM users WHERE email = $1`, [email]);
+    if (rows.length) {
+      const token = signToken({ sub: rows[0].id, purpose: 'reset' }, 60 * 60); // 1 hour
+      // TODO: send this via email. For now, log it.
+      console.log(`[password-reset] ${email} → /reset?token=${token}`);
+    }
+  } catch { /* ignore — still return ok so we don't leak which emails exist */ }
+  return { ok: true };
+}
+
+/** Complete a forgot-password flow with a reset token. */
+export async function resetWithToken(body: any) {
+  let payload: any;
+  try { payload = verifyToken(String(body.token ?? '')); }
+  catch { throw new HttpError(400, 'invalid_or_expired', 'This reset link is invalid or has expired'); }
+  if (payload.purpose !== 'reset') throw new HttpError(400, 'invalid_or_expired', 'This reset link is invalid or has expired');
+  return setPassword(payload.sub, body.newPassword);
+}
+
 export async function getUserById(id: string) {
   const { rows } = await db().query(`SELECT * FROM users WHERE id = $1`, [id]);
   if (rows.length === 0) throw new HttpError(404, 'user_not_found');
@@ -176,6 +243,7 @@ export function authenticate(req: Request, _res: Response, next: NextFunction) {
   if (!token) return next(new HttpError(401, 'unauthenticated', 'Sign in to continue'));
   try {
     const p = verifyToken(token);
+    if (p.purpose) return next(new HttpError(401, 'invalid_token')); // e.g. a reset token can't be a session
     req.user = { id: p.sub, householdId: p.hh, role: p.role, email: p.email ?? '' };
     next();
   } catch (e) {

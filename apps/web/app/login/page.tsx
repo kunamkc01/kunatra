@@ -90,6 +90,11 @@ export default function Login() {
             </button>
           </div>
         </form>
+        {mode === "login" && (
+          <div className="auth-toggle" style={{ marginTop: 10 }}>
+            <a href="/forgot" style={{ color: "var(--accent)", fontWeight: 500 }}>Forgot password?</a>
+          </div>
+        )}
         <div className="auth-toggle">
           {mode === "login" ? (
             <>New here? <button onClick={() => { setMode("register"); setErr(null); }}>Create an account</button></>

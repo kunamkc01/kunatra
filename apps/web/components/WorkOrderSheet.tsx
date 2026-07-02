@@ -1,7 +1,14 @@
 "use client";
 import { useState } from "react";
-import { api, type Asset, type Vendor, type WorkOrder, type WorkOrderCategory } from "@/lib/api";
+import { api, type Asset, type Vendor, type WorkOrder, type WorkOrderCategory, type Recurrence } from "@/lib/api";
 import { Sheet } from "./Sheet";
+
+const RECUR: { value: Recurrence; label: string }[] = [
+  { value: "none", label: "One-off" },
+  { value: "monthly", label: "Monthly" },
+  { value: "quarterly", label: "Quarterly" },
+  { value: "yearly", label: "Yearly" },
+];
 
 const CATEGORIES: { value: WorkOrderCategory; label: string }[] = [
   { value: "repair", label: "Repair" },
@@ -29,6 +36,7 @@ export function WorkOrderSheet({
   const [estimatedCost, setEst] = useState(existing?.estimatedCost != null ? String(existing.estimatedCost) : "");
   const [actualCost, setActual] = useState(existing?.actualCost != null ? String(existing.actualCost) : "");
   const [notes, setNotes] = useState(existing?.notes ?? "");
+  const [recurrence, setRecurrence] = useState<Recurrence>(existing?.recurrence ?? "none");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -45,6 +53,7 @@ export function WorkOrderSheet({
       estimatedCost: estimatedCost ? Number(estimatedCost) : null,
       actualCost: actualCost ? Number(actualCost) : null,
       notes: notes.trim() || null,
+      recurrence,
     };
     try {
       if (existing) await api.updateWorkOrder(existing.id, body);
@@ -102,9 +111,18 @@ export function WorkOrderSheet({
             <div className="hint">Required to mark done</div>
           </div>
         </div>
-        <div className="field">
-          <label>Notes</label>
-          <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional" />
+        <div className="row2">
+          <div className="field">
+            <label>Repeats</label>
+            <select value={recurrence} onChange={(e) => setRecurrence(e.target.value as Recurrence)}>
+              {RECUR.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+            </select>
+            {recurrence !== "none" && <div className="hint">A fresh one is created when you complete it</div>}
+          </div>
+          <div className="field">
+            <label>Notes</label>
+            <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional" />
+          </div>
         </div>
         {err && <div className="err">{err}</div>}
         <div className="actions">

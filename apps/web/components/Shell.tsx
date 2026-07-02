@@ -37,7 +37,15 @@ export function Shell({ office, children }: { office?: string | null; children: 
         </div>
         {user && (
           <div className="userchip">
-            <span className="who"><b>{user.fullName || user.email}</b><span className="rolepill" style={{ marginTop: 2 }}><span className="dot" /> {user.role === "owner" ? "Owner" : user.role === "advisor" ? "Advisor" : "Operations"}</span></span>
+            <Link href="/profile" title="Profile" style={{ display: "flex" }}>
+              {user.avatar
+                ? <img className="avatar" src={user.avatar} alt="" />
+                : <span className="avatar avatar-fallback" style={{ fontSize: 13 }}>{(user.fullName || user.email).charAt(0).toUpperCase()}</span>}
+            </Link>
+            <span className="who">
+              <Link href="/profile" style={{ textDecoration: "none" }}><b>{user.fullName || user.email}</b></Link>
+              <span className="rolepill" style={{ marginTop: 2 }}><span className="dot" /> {user.role === "owner" ? "Owner" : user.role === "advisor" ? "Advisor" : "Operations"}</span>
+            </span>
             <button className="btn small" onClick={logout}>Sign out</button>
           </div>
         )}

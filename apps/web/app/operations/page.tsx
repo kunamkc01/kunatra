@@ -152,6 +152,7 @@ export default function Operations() {
               </div>
               <div className="meta">
                 {CAT_LABEL[w.category]}
+                {w.recurrence !== "none" ? ` · repeats ${w.recurrence}` : ""}
                 {w.assetName ? ` · ${w.assetName}` : ""}
                 {w.vendorName ? ` · ${w.vendorName}` : ""}
                 {w.scheduledFor ? ` · due ${w.scheduledFor}` : ""}

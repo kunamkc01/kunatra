@@ -33,6 +33,8 @@ app.get('/health', (_req, res) => res.json({ ok: true }));
 // ---- auth (public) --------------------------------------------------------
 app.post('/api/auth/register', h(async (req, res) => res.status(201).json(await auth.register(req.body))));
 app.post('/api/auth/login', h(async (req, res) => res.json(await auth.login(req.body))));
+app.post('/api/auth/forgot', h(async (req, res) => res.json(await auth.requestReset(req.body))));
+app.post('/api/auth/reset', h(async (req, res) => res.json(await auth.resetWithToken(req.body))));
 
 // Demo assessment for the bundled sample persona (no real data, so public).
 app.get('/api/assessment', h(async (_req, res) => res.json(assess(salariedSample))));
@@ -47,9 +49,10 @@ const { requireRole, sameHousehold, scopeResource, scopeVia } = auth;
 const ownerOnly = requireRole('owner');
 const financialView = requireRole('owner', 'advisor'); // read-only advisors see the money view
 
-// Advisors are strictly read-only.
+// Advisors are strictly read-only — except for their own profile & password.
 app.use((req, res, next) => {
-  if (req.user?.role === 'advisor' && ['POST', 'PATCH', 'DELETE'].includes(req.method) && req.path.startsWith('/api/')) {
+  if (req.user?.role === 'advisor' && ['POST', 'PATCH', 'DELETE'].includes(req.method)
+      && req.path.startsWith('/api/') && !req.path.startsWith('/api/auth/')) {
     return next(new HttpError(403, 'read_only', 'Advisors have read-only access'));
   }
   next();
@@ -58,8 +61,10 @@ app.use((req, res, next) => {
 // Record who changed what (runs after authentication, before the handlers).
 app.use(auditMiddleware);
 
-// ---- current user ---------------------------------------------------------
+// ---- current user & profile ----------------------------------------------
 app.get('/api/auth/me', h(async (req, res) => res.json(await auth.getUserById(req.user!.id))));
+app.patch('/api/auth/profile', h(async (req, res) => res.json(await auth.updateProfile(req.user!.id, req.body))));
+app.post('/api/auth/password', h(async (req, res) => res.json(await auth.changePassword(req.user!.id, req.body))));
 
 // ---- households ----------------------------------------------------------
 app.get('/api/households/:id', sameHousehold, h(async (req, res) => {
@@ -159,6 +164,7 @@ app.delete('/api/users/:id', scopeResource('users'), ownerOnly, h(async (req, re
   await auth.deleteUser(req.params.id);
   res.sendStatus(204);
 }));
+app.post('/api/users/:id/reset-password', scopeResource('users'), ownerOnly, h(async (req, res) => res.json(await auth.setPassword(req.params.id, req.body.newPassword))));
 
 // ---- error handling ------------------------------------------------------
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {

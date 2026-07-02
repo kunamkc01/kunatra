@@ -22,6 +22,7 @@ services:
       - ./apps/api/db/audit.sql:/docker-entrypoint-initdb.d/09-audit.sql:ro
       - ./apps/api/db/roles.sql:/docker-entrypoint-initdb.d/10-roles.sql:ro
       - ./apps/api/db/acquisition.sql:/docker-entrypoint-initdb.d/11-acquisition.sql:ro
+      - ./apps/api/db/profile.sql:/docker-entrypoint-initdb.d/12-profile.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U kunatra -d kunatra"]
       interval: 3s

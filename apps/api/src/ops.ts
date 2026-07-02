@@ -40,6 +40,8 @@ function oneOf<T extends string>(v: unknown, allowed: readonly T[], field: strin
 const CATEGORIES = ['repair', 'maintenance', 'amc', 'improvement', 'other'] as const;
 const STATUSES = ['open', 'in_progress', 'done', 'cancelled'] as const;
 const RATINGS = ['good', 'fair', 'poor'] as const;
+const RECUR = ['none', 'monthly', 'quarterly', 'yearly'] as const;
+const INTERVAL: Record<string, string> = { monthly: '1 month', quarterly: '3 months', yearly: '1 year' };
 type Status = (typeof STATUSES)[number];
 
 // Allowed status transitions. Closing (-> done) additionally requires an actual cost.
@@ -101,7 +103,7 @@ export async function deleteVendor(id: string) {
 const woRow = (r: any) => ({
   id: r.id, householdId: r.household_id, assetId: r.asset_id ?? null, vendorId: r.vendor_id ?? null,
   assetName: r.asset_name ?? null, vendorName: r.vendor_name ?? null,
-  title: r.title, category: r.category, status: r.status,
+  title: r.title, category: r.category, status: r.status, recurrence: r.recurrence,
   scheduledFor: r.scheduled_for ?? null,
   estimatedCost: r.estimated_cost_paise != null ? paiseToRupees(r.estimated_cost_paise) : null,
   actualCost: r.actual_cost_paise != null ? paiseToRupees(r.actual_cost_paise) : null,
@@ -145,15 +147,16 @@ export async function createWorkOrder(householdId: string, body: any) {
   }
   const { rows } = await db().query(
     `INSERT INTO work_orders
-       (household_id, asset_id, vendor_id, title, category, status, scheduled_for, estimated_cost_paise, actual_cost_paise, notes, closure_note)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
+       (household_id, asset_id, vendor_id, title, category, status, scheduled_for, estimated_cost_paise, actual_cost_paise, notes, closure_note, recurrence)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
     [householdId, str(body.assetId, 'assetId') ?? null, str(body.vendorId, 'vendorId') ?? null,
      str(body.title, 'title', { required: true }),
      oneOf(body.category, CATEGORIES, 'category', 'repair'), status,
      dateStr(body.scheduledFor, 'scheduledFor'),
      estimated != null ? rupeesToPaise(estimated) : null,
      actual != null ? rupeesToPaise(actual) : null,
-     str(body.notes, 'notes') ?? null, str(body.closureNote, 'closureNote') ?? null]
+     str(body.notes, 'notes') ?? null, str(body.closureNote, 'closureNote') ?? null,
+     oneOf(body.recurrence, RECUR, 'recurrence', 'none')]
   );
   return getWorkOrder(rows[0].id);
 }
@@ -164,6 +167,7 @@ export async function updateWorkOrder(id: string, body: any) {
   const push = (c: string, v: any) => { vals.push(v); sets.push(`${c} = $${vals.length}`); };
 
   // Status transition (validated against the state machine + closure gate).
+  let closedNow = false;
   if ('status' in body && body.status !== current.status) {
     const next = oneOf(body.status, STATUSES, 'status');
     if (!TRANSITIONS[current.status as Status].includes(next)) {
@@ -175,9 +179,11 @@ export async function updateWorkOrder(id: string, body: any) {
       if (providedActual == null && current.actual_cost_paise == null) {
         throw new HttpError(400, 'closure_requires_cost', 'Closing a work order requires an actual cost');
       }
+      closedNow = true;
     }
     push('status', next);
   }
+  if ('recurrence' in body) push('recurrence', oneOf(body.recurrence, RECUR, 'recurrence'));
 
   if ('title' in body) push('title', str(body.title, 'title', { required: true }));
   if ('category' in body) push('category', oneOf(body.category, CATEGORIES, 'category'));
@@ -193,6 +199,18 @@ export async function updateWorkOrder(id: string, body: any) {
   push('updated_at', new Date());
   vals.push(id);
   await db().query(`UPDATE work_orders SET ${sets.join(', ')} WHERE id = $${vals.length}`, vals);
+
+  // A recurring work order regenerates the next occurrence when it's completed.
+  const recurrence = (body.recurrence != null ? body.recurrence : current.recurrence) as string;
+  if (closedNow && recurrence !== 'none') {
+    await db().query(
+      `INSERT INTO work_orders (household_id, asset_id, vendor_id, title, category, status, scheduled_for, estimated_cost_paise, notes, recurrence)
+       SELECT household_id, asset_id, vendor_id, title, category, 'open',
+              COALESCE(scheduled_for, current_date) + $2::interval, estimated_cost_paise, notes, $3::recurrence
+         FROM work_orders WHERE id = $1`,
+      [id, INTERVAL[recurrence], recurrence]
+    );
+  }
   return getWorkOrder(id);
 }
 
@@ -205,7 +223,7 @@ export async function deleteWorkOrder(id: string) {
 
 const inspectionRow = (r: any) => ({
   id: r.id, householdId: r.household_id, assetId: r.asset_id ?? null, assetName: r.asset_name ?? null,
-  inspectedOn: r.inspected_on, rating: r.rating, notes: r.notes ?? null, createdAt: r.created_at,
+  inspectedOn: r.inspected_on, rating: r.rating, recurrence: r.recurrence, notes: r.notes ?? null, createdAt: r.created_at,
 });
 
 export async function listInspections(householdId: string) {
@@ -220,13 +238,25 @@ export async function listInspections(householdId: string) {
 
 export async function createInspection(householdId: string, body: any) {
   await getHousehold(householdId);
+  const assetId = str(body.assetId, 'assetId') ?? null;
+  const inspectedOn = dateStr(body.inspectedOn, 'inspectedOn', { required: true })!;
+  const recurrence = oneOf(body.recurrence, RECUR, 'recurrence', 'none');
   const { rows } = await db().query(
-    `INSERT INTO inspections (household_id, asset_id, inspected_on, rating, notes) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-    [householdId, str(body.assetId, 'assetId') ?? null, dateStr(body.inspectedOn, 'inspectedOn', { required: true }),
-     oneOf(body.rating, RATINGS, 'rating'), str(body.notes, 'notes') ?? null]
+    `INSERT INTO inspections (household_id, asset_id, inspected_on, rating, notes, recurrence) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+    [householdId, assetId, inspectedOn, oneOf(body.rating, RATINGS, 'rating'), str(body.notes, 'notes') ?? null, recurrence]
   );
   const { rows: full } = await db().query(
     `SELECT i.*, a.name AS asset_name FROM inspections i LEFT JOIN assets a ON a.id = i.asset_id WHERE i.id = $1`, [rows[0].id]);
+
+  // A recurring inspection schedules the next one on the compliance calendar.
+  if (recurrence !== 'none') {
+    const title = `${full[0].asset_name ?? 'Asset'} inspection`;
+    await db().query(
+      `INSERT INTO compliance_items (household_id, asset_id, title, kind, due_on, recurrence)
+       VALUES ($1,$2,$3,'inspection', $4::date + $5::interval, $6)`,
+      [householdId, assetId, title, inspectedOn, INTERVAL[recurrence], recurrence]
+    );
+  }
   return inspectionRow(full[0]);
 }
 

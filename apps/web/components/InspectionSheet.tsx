@@ -1,9 +1,15 @@
 "use client";
 import { useState } from "react";
-import { api, type Asset, type Inspection, type InspectionRating } from "@/lib/api";
+import { api, type Asset, type Inspection, type InspectionRating, type Recurrence } from "@/lib/api";
 import { Sheet } from "./Sheet";
 
 const RATINGS: InspectionRating[] = ["good", "fair", "poor"];
+const RECUR: { value: Recurrence; label: string }[] = [
+  { value: "none", label: "One-off" },
+  { value: "monthly", label: "Monthly" },
+  { value: "quarterly", label: "Quarterly" },
+  { value: "yearly", label: "Yearly" },
+];
 
 export function InspectionSheet({
   householdId, assets, onClose, onSaved,
@@ -16,6 +22,7 @@ export function InspectionSheet({
   const [assetId, setAssetId] = useState("");
   const [inspectedOn, setDate] = useState("");
   const [rating, setRating] = useState<InspectionRating>("good");
+  const [recurrence, setRecurrence] = useState<Recurrence>("none");
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -26,7 +33,7 @@ export function InspectionSheet({
     setErr(null);
     try {
       await api.createInspection(householdId, {
-        assetId: assetId || null, inspectedOn, rating, notes: notes.trim() || null,
+        assetId: assetId || null, inspectedOn, rating, recurrence, notes: notes.trim() || null,
       });
       onSaved();
     } catch (e: any) {
@@ -51,11 +58,20 @@ export function InspectionSheet({
             <input type="date" value={inspectedOn} onChange={(e) => setDate(e.target.value)} />
           </div>
         </div>
-        <div className="field">
-          <label>Condition</label>
-          <select value={rating} onChange={(e) => setRating(e.target.value as InspectionRating)}>
-            {RATINGS.map((r) => <option key={r} value={r} style={{ textTransform: "capitalize" }}>{r}</option>)}
-          </select>
+        <div className="row2">
+          <div className="field">
+            <label>Condition</label>
+            <select value={rating} onChange={(e) => setRating(e.target.value as InspectionRating)}>
+              {RATINGS.map((r) => <option key={r} value={r} style={{ textTransform: "capitalize" }}>{r}</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <label>Repeats</label>
+            <select value={recurrence} onChange={(e) => setRecurrence(e.target.value as Recurrence)}>
+              {RECUR.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+            </select>
+            {recurrence !== "none" && <div className="hint">Schedules the next on the calendar</div>}
+          </div>
         </div>
         <div className="field">
           <label>Notes</label>

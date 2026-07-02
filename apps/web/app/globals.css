@@ -162,6 +162,11 @@ tbody tr:last-child td { border-bottom: 0; }
 .sheet { background: var(--surface); width: 100%; max-width: 480px; border-radius: 14px; padding: 20px 20px 24px; max-height: 92vh; overflow-y: auto; border: 1px solid var(--line); }
 .sheet h3 { font-family: var(--serif); font-weight: 500; font-size: 19px; margin: 0 0 14px; color: var(--ink); }
 
+/* Avatars */
+.avatar { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; border: 1px solid var(--line); background: var(--tint); flex: none; }
+.avatar-lg { width: 72px; height: 72px; border-radius: 50%; object-fit: cover; border: 1px solid var(--line); background: var(--tint); }
+.avatar-fallback { display: inline-flex; align-items: center; justify-content: center; background: var(--navy); color: #fff; font-family: var(--serif); font-weight: 600; }
+
 /* Narrative asset "story" */
 .story { font-size: 13px; color: var(--slate); margin: 2px 0 12px; line-height: 1.5; }
 .story b { color: var(--ink); font-weight: 600; }

@@ -144,6 +144,7 @@ export interface WorkOrder {
   title: string;
   category: WorkOrderCategory;
   status: WorkOrderStatus;
+  recurrence: Recurrence;
   scheduledFor: string | null;
   estimatedCost: number | null;
   actualCost: number | null;
@@ -160,6 +161,7 @@ export interface Inspection {
   assetName: string | null;
   inspectedOn: string;
   rating: InspectionRating;
+  recurrence: Recurrence;
   notes: string | null;
   createdAt: string;
 }
@@ -194,6 +196,7 @@ export interface User {
   email: string;
   fullName: string | null;
   role: Role;
+  avatar?: string | null;
   createdAt?: string;
 }
 
@@ -241,6 +244,16 @@ export const api = {
   login: (b: { email: string; password: string }) =>
     req<Session>("/api/auth/login", { method: "POST", body: JSON.stringify(b) }),
   me: () => req<User>("/api/auth/me"),
+  updateProfile: (b: { fullName?: string; avatar?: string | null }) =>
+    req<User>("/api/auth/profile", { method: "PATCH", body: JSON.stringify(b) }),
+  changePassword: (b: { currentPassword: string; newPassword: string }) =>
+    req<{ ok: boolean }>("/api/auth/password", { method: "POST", body: JSON.stringify(b) }),
+  resetTeammatePassword: (userId: string, newPassword: string) =>
+    req<{ ok: boolean }>(`/api/users/${userId}/reset-password`, { method: "POST", body: JSON.stringify({ newPassword }) }),
+  forgotPassword: (email: string) =>
+    req<{ ok: boolean }>("/api/auth/forgot", { method: "POST", body: JSON.stringify({ email }) }),
+  resetPassword: (token: string, newPassword: string) =>
+    req<{ ok: boolean }>("/api/auth/reset", { method: "POST", body: JSON.stringify({ token, newPassword }) }),
 
   // team (owner only)
   listUsers: (id: string) => req<User[]>(`/api/households/${id}/users`),
@@ -356,6 +369,10 @@ export const getUser = (): User | null => {
 export const saveSession = (s: Session) => {
   window.localStorage.setItem(TOKEN_KEY, s.token);
   window.localStorage.setItem(USER_KEY, JSON.stringify(s.user));
+};
+
+export const setStoredUser = (user: User) => {
+  if (typeof window !== "undefined") window.localStorage.setItem(USER_KEY, JSON.stringify(user));
 };
 
 export const clearSession = () => {
