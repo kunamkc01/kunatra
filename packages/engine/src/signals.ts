@@ -1,6 +1,8 @@
 import type { Position, Signal, Severity } from './types.ts';
 import { exposure } from './exposure.ts';
 import { investments } from './investments.ts';
+import { income } from './income.ts';
+import { formatINR } from './format.ts';
 
 /**
  * Band a metric into good / watch / warning.
@@ -20,7 +22,26 @@ function band(v: number, good: number, warn: number, higherIsWorse = true): Seve
 export function signals(p: Position, asOf?: Date | string): Signal[] {
   const ex = exposure(p);
   const inv = investments(p, asOf);
+  const inc = income(p);
   const out: Signal[] = [];
+
+  // Monthly surplus — everything coming in (salary + rent) less EMIs and essentials.
+  if (inc.total > 0) {
+    const totalEmi = p.loans.reduce((s, l) => s + l.emiMonthly, 0);
+    const essential = p.expenses?.monthlyEssential ?? 0;
+    const surplus = inc.total - totalEmi - essential;
+    const pct = (surplus / inc.total) * 100;
+    out.push({
+      key: 'surplus',
+      label: 'Monthly surplus',
+      value: surplus,
+      display: formatINR(surplus),
+      severity: surplus < 0 ? 'warning' : pct < 10 ? 'watch' : 'good',
+      message: surplus >= 0
+        ? `After EMIs and essentials you keep ${formatINR(surplus)} a month.`
+        : `You spend ${formatINR(-surplus)} more than you bring in each month.`,
+    });
+  }
 
   if (inv.xirrPct != null) {
     const v = inv.xirrPct;

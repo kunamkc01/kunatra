@@ -50,9 +50,11 @@ export default function Portfolio() {
   const nw = assessment?.netWorth;
   const ex = assessment?.exposure;
   const inv = assessment?.investments;
+  const incomeB = assessment?.income;
   const signals = assessment?.signals ?? [];
   const hasData = nw && (nw.grossAssets > 0 || nw.totalDebt > 0);
   const byKey = (k: string) => signals.find((s) => s.key === k);
+  const surplusSig = byKey("surplus");
   // Areas that aren't in the clear, worst first — named so the status says *what* to look at.
   const flagged = signals
     .filter((s) => s.severity !== "good")
@@ -108,7 +110,7 @@ export default function Portfolio() {
               <div className={`tile ${tileClass(byKey("ltv")?.severity)}`}><div className="tl">Real-estate LTV</div><div className="tv num" style={{ fontSize: 21, marginTop: 4 }}>{ex.realEstateLTV.toFixed(0)}%</div></div>
             )}
             {ex?.emiToIncome != null ? (
-              <div className={`tile ${tileClass(byKey("emi")?.severity)}`}><div className="tl">EMI vs income</div><div className="tv num" style={{ fontSize: 21, marginTop: 4 }}>{ex.emiToIncome.toFixed(0)}%</div></div>
+              <div className={`tile ${tileClass(byKey("emi")?.severity)}`}><div className="tl">EMI vs salary</div><div className="tv num" style={{ fontSize: 21, marginTop: 4 }}>{ex.emiToIncome.toFixed(0)}%</div></div>
             ) : ex?.runwayMonths != null ? (
               <div className={`tile ${tileClass(byKey("runway")?.severity)}`}><div className="tl">Emergency runway</div><div className="tv num" style={{ fontSize: 21, marginTop: 4 }}>{ex.runwayMonths.toFixed(1)} mo</div></div>
             ) : null}
@@ -116,6 +118,22 @@ export default function Portfolio() {
               <div className={`tile ${tileClass(byKey("dscr")?.severity)}`}><div className="tl">Rent vs EMI (DSCR)</div><div className="tv num" style={{ fontSize: 21, marginTop: 4 }}>{ex.dscr.toFixed(2)}×</div></div>
             )}
           </div>
+
+          {incomeB && (incomeB.earned > 0 || incomeB.fromAssets > 0) && (
+            <>
+              <div className="label" style={{ margin: "18px 0 8px" }}>Monthly income <span className="muted" style={{ fontWeight: 400 }}>· salary kept separate from what your assets bring in</span></div>
+              <div className="tiles" style={{ marginBottom: 14 }}>
+                <div className="tile"><div className="tl">Salary (take-home)</div><div className="tv num" style={{ fontSize: 21, marginTop: 4 }}>{inr(incomeB.earned)}</div></div>
+                {incomeB.fromAssets > 0 && (
+                  <div className="tile acc"><div className="tl">From assets (rent)</div><div className="tv num" style={{ fontSize: 21, marginTop: 4 }}>{inr(incomeB.fromAssets)}</div></div>
+                )}
+                <div className="tile"><div className="tl">Total coming in</div><div className="tv num" style={{ fontSize: 21, marginTop: 4 }}>{inr(incomeB.total)}</div></div>
+                {surplusSig && (
+                  <div className={`tile ${tileClass(surplusSig.severity)}`}><div className="tl">Monthly surplus</div><div className="tv num" style={{ fontSize: 21, marginTop: 4 }}>{surplusSig.display}</div></div>
+                )}
+              </div>
+            </>
+          )}
 
           {/* Allocation */}
           <div className="bar">

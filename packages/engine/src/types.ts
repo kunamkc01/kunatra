@@ -124,9 +124,20 @@ export interface Investments {
   xirrPct: number | null;
 }
 
+/** Monthly income, split so earned pay stays distinct from what assets throw off. */
+export interface IncomeBreakdown {
+  /** Earned income — salary / take-home, in rupees. */
+  earned: number;
+  /** Income from assets — rent from let property (and similar), in rupees. */
+  fromAssets: number;
+  /** earned + fromAssets, in rupees. */
+  total: number;
+}
+
 export interface Assessment {
   netWorth: NetWorth;
   exposure: Exposure;
   investments: Investments;
+  income: IncomeBreakdown;
   signals: Signal[];
 }

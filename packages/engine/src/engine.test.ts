@@ -42,6 +42,23 @@ test('dscr = monthly rent / total EMI', () => {
   assert.ok(Math.abs((ex.dscr ?? 0) - 0.8) < 1e-9);
 });
 
+test('income splits salary (earned) from asset income (rent), with surplus', () => {
+  const a = assess({
+    assets: [
+      { id: 'flat', name: 'Let flat', assetClass: 'real_estate', value: 10_000_000, liquid: false, monthlyRent: 40_000 },
+      { id: 'cash', name: 'Cash', assetClass: 'cash', value: 500_000, liquid: true },
+    ],
+    loans: [{ id: 'l', name: 'Home', outstanding: 5_000_000, emiMonthly: 50_000, securedAgainstAssetId: 'flat' }],
+    income: { monthlyTakeHome: 120_000 },
+    expenses: { monthlyEssential: 40_000 },
+  });
+  assert.equal(a.income.earned, 120_000);   // salary only
+  assert.equal(a.income.fromAssets, 40_000); // rent
+  assert.equal(a.income.total, 160_000);
+  const surplus = a.signals.find((s) => s.key === 'surplus');
+  assert.equal(surplus?.value, 70_000); // 160k in − 50k EMI − 40k essentials
+});
+
 test('signals describe, with severities', () => {
   const { signals } = assess(salariedSample);
   const ltv = signals.find((s) => s.key === 'ltv');

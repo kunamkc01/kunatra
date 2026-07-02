@@ -2,12 +2,14 @@ import type { Position, Assessment } from './types.ts';
 import { netWorth } from './networth.ts';
 import { exposure } from './exposure.ts';
 import { investments } from './investments.ts';
+import { income } from './income.ts';
 import { signals } from './signals.ts';
 
 export * from './types.ts';
 export { netWorth } from './networth.ts';
 export { exposure } from './exposure.ts';
 export { investments } from './investments.ts';
+export { income } from './income.ts';
 export { xirr } from './xirr.ts';
 export { signals } from './signals.ts';
 export { formatINR } from './format.ts';
@@ -18,7 +20,7 @@ export { formatINR } from './format.ts';
  * engine stays pure. Omit it and XIRR is simply null.
  */
 export function assess(p: Position, asOf?: Date | string): Assessment {
-  return { netWorth: netWorth(p), exposure: exposure(p), investments: investments(p, asOf), signals: signals(p, asOf) };
+  return { netWorth: netWorth(p), exposure: exposure(p), investments: investments(p, asOf), income: income(p), signals: signals(p, asOf) };
 }
 
 /** A representative salaried-professional position for demos and tests. */
