@@ -73,6 +73,8 @@ app.get('/api/auth/me', h(async (req, res) => res.json(await auth.me(req.user!))
 app.patch('/api/auth/profile', h(async (req, res) => { await auth.updateProfile(req.user!.id, req.body); res.json(await auth.me(req.user!)); }));
 app.post('/api/auth/password', h(async (req, res) => res.json(await auth.changePassword(req.user!.id, req.body))));
 app.post('/api/auth/switch', h(async (req, res) => res.json(await auth.switchHousehold(req.user!.id, req.body))));
+// Create a new household you own (any authenticated user), and switch to it.
+app.post('/api/households', h(async (req, res) => res.status(201).json(await auth.createHousehold(req.user!.id, req.body))));
 
 // ---- households ----------------------------------------------------------
 app.get('/api/households/:id', sameHousehold, h(async (req, res) => {
@@ -180,7 +182,8 @@ app.delete('/api/users/:id', ownerOnly, h(async (req, res) => {
   await auth.deleteUser(req.params.id, req.user!.householdId);
   res.sendStatus(204);
 }));
-app.post('/api/users/:id/reset-password', ownerOnly, h(async (req, res) => res.json(await auth.resetTeammatePassword(req.params.id, req.user!.householdId, req.body.newPassword))));
+// Teammate password reset is email-only now — the owner triggers a reset link
+// via POST /api/auth/forgot (public); no owner-typed passwords.
 
 // ---- error handling ------------------------------------------------------
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {

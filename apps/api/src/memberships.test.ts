@@ -128,6 +128,21 @@ test('memberships: manager, member & household switch', { skip: hasDb ? false : 
       const me = (await call('GET', '/api/auth/me', undefined, ownerTok)).body;
       assert.equal(me.households.length, 1);
     });
+
+    await t.test('anyone can create their own household and owns it', async () => {
+      // the wife (a member of the first household) spins up her own
+      const wifeTok3 = (await call('POST', '/api/auth/login', { email: wifeEmail, password: 'secret123' })).body.token;
+      const before = (await call('GET', '/api/auth/me', undefined, wifeTok3)).body.households.length;
+      const created = await call('POST', '/api/households', { displayName: 'Her own place' }, wifeTok3);
+      assert.equal(created.status, 201);
+      assert.equal(created.body.user.role, 'owner');            // owner of the new one
+      assert.equal(created.body.user.households.length, before + 1);
+      const newHh = created.body.user.householdId;
+      const newTok = created.body.token;
+      // and as owner she can add a property there
+      assert.equal((await call('POST', `/api/households/${newHh}/assets`, { name: 'Her flat', assetClass: 'real_estate', value: 4000000 }, newTok)).status, 201);
+      await call('DELETE', `/api/households/${newHh}`, undefined, newTok);
+    });
   } finally {
     if (sisHousehold) await call('DELETE', `/api/households/${sisHousehold}`, undefined, sisTok);
     if (householdId) await call('DELETE', `/api/households/${householdId}`, undefined, ownerTok);

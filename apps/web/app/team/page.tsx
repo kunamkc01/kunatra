@@ -30,11 +30,10 @@ export default function Team() {
     try { await api.deleteUser(u.id); if (user) load(user.householdId); }
     catch (e: any) { alert(e.message ?? "Could not remove"); }
   }
-  async function resetPw(u: User) {
-    const pw = window.prompt(`Set a new password for ${u.email} (they can change it after signing in):`, "");
-    if (!pw) return;
-    try { await api.resetTeammatePassword(u.id, pw); alert(`Password updated for ${u.email}.`); }
-    catch (e: any) { alert(e.message ?? "Could not reset"); }
+  async function sendReset(u: User) {
+    if (!confirm(`Email a password-reset link to ${u.email}?`)) return;
+    try { await api.forgotPassword(u.email); alert(`Reset link sent to ${u.email}.`); }
+    catch (e: any) { alert(e.message ?? "Could not send"); }
   }
 
   if (!ready) return <Shell><div /></Shell>;
@@ -64,7 +63,7 @@ export default function Team() {
           </div>
           {u.id !== user?.id && (
             <div className="acts">
-              <button className="btn ghost small" onClick={() => resetPw(u)}>Reset password</button>
+              <button className="btn ghost small" onClick={() => sendReset(u)}>Email reset link</button>
               <button className="btn ghost small danger" onClick={() => removeUser(u)}>Remove</button>
             </div>
           )}

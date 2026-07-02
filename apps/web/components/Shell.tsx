@@ -70,6 +70,19 @@ export function Shell({ office, children }: { office?: string | null; children: 
     }
   }
 
+  async function newHousehold() {
+    const name = window.prompt("Name your new household (you'll be its owner):", "My household");
+    if (name == null) return;
+    try {
+      const s = await api.createHousehold({ displayName: name.trim() || "My household" });
+      saveSession(s);
+      setMenuOpen(false);
+      window.location.assign("/");
+    } catch {
+      // stay put; the 401 handler in api.ts covers auth failures
+    }
+  }
+
   const households = user?.households ?? [];
 
   return (
@@ -96,8 +109,8 @@ export function Shell({ office, children }: { office?: string | null; children: 
                   <div className="menu-email">{user.email}</div>
                   <span className="rolepill" style={{ marginTop: 6 }}><span className="dot" /> {roleLabel(user.role)}</span>
                 </div>
-                {households.length > 1 && (
-                  <div className="menu-section">
+                <div className="menu-section">
+                  {households.length > 1 && <>
                     <div className="menu-section-label">Households</div>
                     {households.map((h) => (
                       <button
@@ -115,8 +128,12 @@ export function Shell({ office, children }: { office?: string | null; children: 
                         )}
                       </button>
                     ))}
-                  </div>
-                )}
+                  </>}
+                  <button className="menu-item" role="menuitem" onClick={newHousehold}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 5v14M5 12h14" /></svg>
+                    New household
+                  </button>
+                </div>
                 <Link href="/profile" className="menu-item" role="menuitem">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z" /></svg>
                   Profile &amp; password

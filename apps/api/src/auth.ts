@@ -144,6 +144,32 @@ export async function switchHousehold(userId: string, body: any) {
   return session(userId, hh);
 }
 
+/** Create a brand-new household owned by the caller, and switch to it. */
+export async function createHousehold(userId: string, body: any) {
+  const name = (typeof body.displayName === 'string' && body.displayName.trim()) || 'My household';
+  const client = await db().connect();
+  try {
+    await client.query('BEGIN');
+    const hh = await client.query(
+      `INSERT INTO households (display_name, monthly_take_home_paise, monthly_essential_paise)
+       VALUES ($1,$2,$3) RETURNING id`,
+      [
+        name,
+        body.monthlyTakeHome ? Math.round(Number(body.monthlyTakeHome) * 100) : null,
+        body.monthlyEssential ? Math.round(Number(body.monthlyEssential) * 100) : null,
+      ]
+    );
+    await client.query(`INSERT INTO memberships (user_id, household_id, role) VALUES ($1,$2,'owner')`, [userId, hh.rows[0].id]);
+    await client.query('COMMIT');
+    return session(userId, hh.rows[0].id);
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
 const tokenFor = (userId: string, householdId: string, email: string) =>
   signToken({ sub: userId, hh: householdId, email });
 
@@ -256,12 +282,6 @@ export async function listUsers(householdId: string) {
   }));
 }
 
-/** True if the user has any access to this household (else 404). */
-async function assertMembership(userId: string, householdId: string) {
-  const m = await resolveMembership(userId, householdId);
-  if (!m) throw new HttpError(404, 'not_a_member');
-}
-
 /**
  * Grant someone access to a household. Existing users just get a new membership
  * (so one login can span households); new emails get an account created too.
@@ -318,12 +338,6 @@ export async function createUser(householdId: string, body: any) {
 export async function deleteUser(userId: string, householdId: string) {
   const { rowCount } = await db().query(`DELETE FROM memberships WHERE user_id = $1 AND household_id = $2`, [userId, householdId]);
   if (rowCount === 0) throw new HttpError(404, 'not_a_member');
-}
-
-/** Owner resets a teammate's password (only for someone in this household). */
-export async function resetTeammatePassword(userId: string, householdId: string, newPassword: string) {
-  await assertMembership(userId, householdId);
-  return setPassword(userId, newPassword);
 }
 
 // ---- middleware -----------------------------------------------------------

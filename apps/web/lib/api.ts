@@ -315,10 +315,10 @@ export const api = {
     req<User>("/api/auth/profile", { method: "PATCH", body: JSON.stringify(b) }),
   changePassword: (b: { currentPassword: string; newPassword: string }) =>
     req<{ ok: boolean }>("/api/auth/password", { method: "POST", body: JSON.stringify(b) }),
-  resetTeammatePassword: (userId: string, newPassword: string) =>
-    req<{ ok: boolean }>(`/api/users/${userId}/reset-password`, { method: "POST", body: JSON.stringify({ newPassword }) }),
   forgotPassword: (email: string) =>
     req<{ ok: boolean }>("/api/auth/forgot", { method: "POST", body: JSON.stringify({ email }) }),
+  createHousehold: (b: { displayName: string; monthlyTakeHome?: number; monthlyEssential?: number }) =>
+    req<Session>("/api/households", { method: "POST", body: JSON.stringify(b) }),
   resetPassword: (token: string, newPassword: string) =>
     req<{ ok: boolean }>("/api/auth/reset", { method: "POST", body: JSON.stringify({ token, newPassword }) }),
 
