@@ -295,9 +295,12 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (res.status === 204) return undefined as T;
   const text = await res.text();
-  const body = text ? JSON.parse(text) : {};
+  // Tolerate non-JSON bodies (e.g. an HTML 404/502 during a deploy) instead of
+  // throwing a raw "Unexpected token '<'" parse error at the UI.
+  let body: any = {};
+  if (text) { try { body = JSON.parse(text); } catch { body = {}; } }
   if (!res.ok) {
-    throw new ApiError(res.status, body.error ?? "error", body.message ?? body.error ?? "Request failed");
+    throw new ApiError(res.status, body.error ?? "http_error", body.message ?? body.error ?? `Request failed (${res.status})`);
   }
   return body as T;
 }
