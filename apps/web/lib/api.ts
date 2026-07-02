@@ -273,7 +273,9 @@ export interface AdminStats {
   rentedProperties: number; loans: number; vendors: number; workOrders: number;
   newUsers7d: number; newUsers30d: number; activeHouseholds: number;
   signupsByWeek: { week: string; count: number }[];
+  assetsByWeek: { week: string; count: number }[];
 }
+export interface AdminActivity { at: string; type: "user" | "household" | "asset"; detail: string; }
 export interface AdminUser {
   id: string; email: string; fullName: string | null; phone: string | null;
   createdAt: string; householdCount: number; roles: string[];
@@ -444,6 +446,7 @@ export const api = {
   // platform admin (app operator)
   adminStats: () => req<AdminStats>("/api/admin/stats"),
   adminUsers: () => req<AdminUser[]>("/api/admin/users"),
+  adminActivity: () => req<AdminActivity[]>("/api/admin/activity"),
 
   // approval workflow
   listApprovals: (id: string) => req<Approval[]>(`/api/households/${id}/approvals`),

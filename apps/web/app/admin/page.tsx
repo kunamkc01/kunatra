@@ -1,31 +1,61 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, type AdminStats, type AdminUser } from "@/lib/api";
+import { api, type AdminStats, type AdminUser, type AdminActivity } from "@/lib/api";
 import { useAuth } from "@/lib/useAuth";
 import { Shell } from "@/components/Shell";
 
 const fmt = (n: number) => n.toLocaleString("en-IN");
 const day = (iso: string) => new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+const ago = (iso: string) => {
+  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 3600) return `${Math.max(1, Math.floor(s / 60))}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+};
+const CLASS_LABEL: Record<string, string> = { real_estate: "real estate", mutual_fund: "mutual fund", sip: "SIP", equity: "equity", epf: "EPF", ppf: "PPF", nps: "NPS", fd: "fixed deposit", rd: "recurring deposit", bonds: "bonds", cash: "cash", gold: "gold", insurance: "insurance", other: "other" };
+const ACT: Record<string, { label: (d: string) => string; dot: string }> = {
+  user: { label: (d) => `New user · ${d}`, dot: "var(--good)" },
+  household: { label: (d) => `New household · ${d}`, dot: "var(--accent, var(--ink))" },
+  asset: { label: (d) => `${CLASS_LABEL[d] ?? d} asset added`, dot: "var(--slate)" },
+};
+
+function WeekChart({ label, data, color }: { label: string; data: { week: string; count: number }[]; color: string }) {
+  const max = Math.max(1, ...data.map((w) => w.count));
+  return (
+    <div className="panel">
+      <div className="sec-label" style={{ marginTop: 0 }}>{label}</div>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 8, height: 90, marginTop: 6 }}>
+        {data.length === 0 && <div className="hint">No activity in the last 8 weeks.</div>}
+        {data.map((w) => (
+          <div key={w.week} style={{ flex: 1, textAlign: "center" }} title={`${w.week}: ${w.count}`}>
+            <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 3 }}>{w.count}</div>
+            <div style={{ height: `${(w.count / max) * 60}px`, background: color, borderRadius: 4, minHeight: 2 }} />
+            <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 4 }}>{w.week.slice(5)}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function Admin() {
   const { user, ready } = useAuth();
   const router = useRouter();
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
+  const [activity, setActivity] = useState<AdminActivity[]>([]);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     if (!ready) return;
     if (!user?.isAdmin) { router.replace("/"); return; }
-    Promise.all([api.adminStats(), api.adminUsers()])
-      .then(([s, u]) => { setStats(s); setUsers(u); })
+    Promise.all([api.adminStats(), api.adminUsers(), api.adminActivity()])
+      .then(([s, u, a]) => { setStats(s); setUsers(u); setActivity(a); })
       .catch((e) => setErr(e.message ?? "Could not load"));
   }, [ready, user, router]);
 
   if (!ready || !user?.isAdmin) return <Shell><div /></Shell>;
-
-  const maxWeek = Math.max(1, ...(stats?.signupsByWeek.map((w) => w.count) ?? [1]));
 
   return (
     <Shell>
@@ -56,20 +86,26 @@ export default function Admin() {
             <Tile k="Work orders" v={fmt(stats.workOrders)} sub={`${stats.vendors} vendors`} />
           </div>
 
-          {stats.signupsByWeek.length > 0 && (
-            <div className="panel" style={{ marginBottom: 16 }}>
-              <div className="sec-label" style={{ marginTop: 0 }}>Signups · last 8 weeks</div>
-              <div style={{ display: "flex", alignItems: "flex-end", gap: 8, height: 90, marginTop: 6 }}>
-                {stats.signupsByWeek.map((w) => (
-                  <div key={w.week} style={{ flex: 1, textAlign: "center" }} title={`${w.week}: ${w.count}`}>
-                    <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 3 }}>{w.count}</div>
-                    <div style={{ height: `${(w.count / maxWeek) * 60}px`, background: "var(--brand, var(--ink))", borderRadius: 4, minHeight: 2 }} />
-                    <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 4 }}>{w.week.slice(5)}</div>
-                  </div>
-                ))}
+          <div className="label" style={{ marginBottom: 8 }}>Trends · last 8 weeks</div>
+          <div className="tiles" style={{ marginBottom: 16, gridTemplateColumns: "1fr 1fr" }}>
+            <WeekChart label="Signups" data={stats.signupsByWeek} color="var(--brand, var(--ink))" />
+            <WeekChart label="Assets added" data={stats.assetsByWeek} color="var(--good)" />
+          </div>
+        </>
+      )}
+
+      {activity.length > 0 && (
+        <>
+          <div className="sec-label">Recent activity</div>
+          <div className="panel" style={{ padding: "6px 0" }}>
+            {activity.map((a, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", borderBottom: i < activity.length - 1 ? "1px solid var(--line)" : "none" }}>
+                <span style={{ width: 7, height: 7, borderRadius: 999, background: (ACT[a.type]?.dot ?? "var(--slate)"), flex: "none" }} />
+                <span style={{ flex: 1, fontSize: 13.5 }}>{ACT[a.type]?.label(a.detail) ?? a.detail}</span>
+                <span className="meta" style={{ fontSize: 12 }}>{ago(a.at)}</span>
               </div>
-            </div>
-          )}
+            ))}
+          </div>
         </>
       )}
 
