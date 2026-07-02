@@ -9,6 +9,7 @@ import * as auth from './auth.ts';
 import * as compliance from './compliance.ts';
 import * as approvals from './approvals.ts';
 import { auditMiddleware, listAudit } from './audit.ts';
+import { remindDueCompliance } from './notify.ts';
 
 export const app = express();
 // Bodies can carry downscaled images (avatars, asset photos) as data URLs, so
@@ -186,4 +187,8 @@ const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv
 if (isMain) {
   const port = Number(process.env.PORT ?? 4000);
   app.listen(port, () => console.log(`Kunatra API on :${port}`));
+  // Compliance reminders: sweep on startup, then twice a day (the reminded_on
+  // guard keeps it to one notification per item per day).
+  remindDueCompliance();
+  setInterval(remindDueCompliance, 12 * 60 * 60 * 1000).unref();
 }

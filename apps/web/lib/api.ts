@@ -237,6 +237,7 @@ export interface User {
   fullName: string | null;
   role: Role;
   avatar?: string | null;
+  phone?: string | null;
   memberId?: string | null;
   households?: Membership[];
   // present on team listings (a user's access within one household)
@@ -290,7 +291,7 @@ export const api = {
   me: () => req<User>("/api/auth/me"),
   switchHousehold: (householdId: string) =>
     req<Session>("/api/auth/switch", { method: "POST", body: JSON.stringify({ householdId }) }),
-  updateProfile: (b: { fullName?: string; avatar?: string | null }) =>
+  updateProfile: (b: { fullName?: string; avatar?: string | null; phone?: string | null }) =>
     req<User>("/api/auth/profile", { method: "PATCH", body: JSON.stringify(b) }),
   changePassword: (b: { currentPassword: string; newPassword: string }) =>
     req<{ ok: boolean }>("/api/auth/password", { method: "POST", body: JSON.stringify(b) }),

@@ -3,6 +3,7 @@
 import crypto from 'node:crypto';
 import type { Request, Response, NextFunction } from 'express';
 import { db, HttpError } from './pool.ts';
+import { sendEmail, appUrl } from './notify.ts';
 
 const SECRET = process.env.AUTH_SECRET ?? 'dev-insecure-secret-change-me';
 const TOKEN_TTL_SEC = 60 * 60 * 24 * 7; // 7 days
@@ -67,7 +68,7 @@ function verifyToken(token: string): any {
 
 const userRow = (r: any) => ({
   id: r.id, householdId: r.household_id, email: r.email, fullName: r.full_name ?? null,
-  role: r.role as Role, avatar: r.avatar ?? null, createdAt: r.created_at,
+  role: r.role as Role, avatar: r.avatar ?? null, phone: r.phone ?? null, createdAt: r.created_at,
 });
 
 const MAX_AVATAR = 700_000; // ~500KB image as a data URL
@@ -90,6 +91,7 @@ export async function register(body: any) {
   const email = normEmail(body.email);
   const passwordHash = hashPassword(body.password);
   const fullName = typeof body.fullName === 'string' ? body.fullName.trim() : null;
+  const phone = typeof body.phone === 'string' ? body.phone.trim() || null : null;
   const householdName = (typeof body.householdName === 'string' && body.householdName.trim()) || 'My household';
 
   const client = await db().connect();
@@ -109,9 +111,9 @@ export async function register(body: any) {
     );
     const householdId = hh.rows[0].id;
     const u = await client.query(
-      `INSERT INTO users (household_id, email, password_hash, full_name, role)
-       VALUES ($1,$2,$3,$4,'owner') RETURNING id`,
-      [householdId, email, passwordHash, fullName]
+      `INSERT INTO users (household_id, email, password_hash, full_name, phone, role)
+       VALUES ($1,$2,$3,$4,$5,'owner') RETURNING id`,
+      [householdId, email, passwordHash, fullName, phone]
     );
     await client.query(`INSERT INTO memberships (user_id, household_id, role) VALUES ($1,$2,'owner')`, [u.rows[0].id, householdId]);
     await client.query('COMMIT');
@@ -166,7 +168,7 @@ async function session(userId: string, householdId: string) {
   const active = households.find((h) => h.householdId === householdId) ?? households[0];
   const { rows } = await db().query(`SELECT * FROM users WHERE id = $1`, [userId]);
   const base = userRow(rows[0]);
-  const user = { id: base.id, email: base.email, fullName: base.fullName, avatar: base.avatar,
+  const user = { id: base.id, email: base.email, fullName: base.fullName, avatar: base.avatar, phone: base.phone,
     householdId: active.householdId, role: active.role, memberId: active.memberId, households };
   return { token: tokenFor(userId, active.householdId, base.email), user };
 }
@@ -183,6 +185,7 @@ export async function updateProfile(userId: string, body: any) {
   const vals: any[] = [];
   const push = (c: string, v: any) => { vals.push(v); sets.push(`${c} = $${vals.length}`); };
   if ('fullName' in body) push('full_name', typeof body.fullName === 'string' ? body.fullName.trim() || null : null);
+  if ('phone' in body) push('phone', typeof body.phone === 'string' ? body.phone.trim() || null : null);
   if ('avatar' in body) push('avatar', avatarOrNull(body.avatar));
   if (sets.length === 0) {
     const { rows } = await db().query(`SELECT * FROM users WHERE id = $1`, [userId]);
@@ -215,8 +218,7 @@ export async function setPassword(userId: string, newPassword: string) {
 
 /**
  * Begin a forgot-password flow. Always returns ok (never reveals whether the email
- * exists). No email server is wired up yet — the reset link is logged to the API
- * console; swap in an email provider here later.
+ * exists). Emails a one-hour reset link via SES (logs it if SES isn't configured).
  */
 export async function requestReset(body: any) {
   try {
@@ -224,8 +226,9 @@ export async function requestReset(body: any) {
     const { rows } = await db().query(`SELECT id FROM users WHERE email = $1`, [email]);
     if (rows.length) {
       const token = signToken({ sub: rows[0].id, purpose: 'reset' }, 60 * 60); // 1 hour
-      // TODO: send this via email. For now, log it.
-      console.log(`[password-reset] ${email} → /reset?token=${token}`);
+      const link = `${appUrl}/reset?token=${token}`;
+      await sendEmail(email, 'Reset your Kunatra password',
+        `Someone asked to reset the password for your Kunatra account.\n\nReset it here (valid for 1 hour):\n${link}\n\nIf this wasn't you, you can ignore this email.`);
     }
   } catch { /* ignore — still return ok so we don't leak which emails exist */ }
   return { ok: true };
@@ -279,6 +282,7 @@ export async function createUser(householdId: string, body: any) {
     await client.query('BEGIN');
     const existing = await client.query(`SELECT id FROM users WHERE email = $1`, [email]);
     let userId: string;
+    let isNew = false;
     if (existing.rowCount) {
       userId = existing.rows[0].id;
     } else {
@@ -288,9 +292,18 @@ export async function createUser(householdId: string, body: any) {
         [householdId, email, pw, fullName, role]
       );
       userId = u.rows[0].id;
+      isNew = true;
     }
     await client.query(`INSERT INTO memberships (user_id, household_id, role, member_id) VALUES ($1,$2,$3,$4)`, [userId, householdId, role, memberId]);
+    const hh = await client.query(`SELECT display_name FROM households WHERE id = $1`, [householdId]);
     await client.query('COMMIT');
+    // Let them know they've been given access (best-effort; never blocks the grant).
+    const place = hh.rows[0]?.display_name ?? 'a household';
+    const signin = isNew
+      ? `Sign in at ${appUrl}/login with this email and the temporary password your admin shared, then change it under Profile.`
+      : `It's on your existing account — sign in at ${appUrl}/login and switch to it from the household menu.`;
+    void sendEmail(email, `You've been given ${role} access on Kunatra`,
+      `You've been added to "${place}" on Kunatra as ${role}.\n\n${signin}`);
     return { ok: true, userId };
   } catch (e: any) {
     await client.query('ROLLBACK');

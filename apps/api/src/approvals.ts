@@ -2,6 +2,7 @@
 // Recommend-and-record: approving just records the decision (never executes).
 import { db, rupeesToPaise, paiseToRupees, HttpError } from './pool.ts';
 import { getHousehold } from './repo.ts';
+import { notifyMoneyManagers, appUrl } from './notify.ts';
 import type { AuthUser } from './auth.ts';
 
 const row = (r: any) => ({
@@ -36,6 +37,12 @@ export async function createApproval(householdId: string, user: AuthUser, body: 
      VALUES ($1,$2,$3,$4,$5) RETURNING *`,
     [householdId, user.email, title, amountPaise, typeof body.note === 'string' ? body.note.trim() : null]
   );
+  // Tell the owners/managers there's something to decide (best-effort).
+  const amt = amountPaise != null ? ` (₹${paiseToRupees(amountPaise).toLocaleString('en-IN')})` : '';
+  void notifyMoneyManagers(householdId,
+    `New approval request: ${title}`,
+    `${user.email} raised an approval request${amt} on your Kunatra household:\n\n${title}\n\nReview & decide: ${appUrl}/operations`,
+    `Kunatra: ${user.email} needs approval — ${title}${amt}`);
   return row(rows[0]);
 }
 

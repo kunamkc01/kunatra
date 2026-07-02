@@ -31,6 +31,7 @@ export default function Profile() {
   const { user, ready } = useAuth();
   const [me, setMe] = useState<User | null>(null);
   const [fullName, setFullName] = useState("");
+  const [phone, setPhone] = useState("");
   const [avatar, setAvatar] = useState<string | null>(null);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -44,7 +45,7 @@ export default function Profile() {
 
   useEffect(() => {
     if (!ready) return;
-    api.me().then((u) => { setMe(u); setFullName(u.fullName ?? ""); setAvatar(u.avatar ?? null); }).catch(() => setMe(getUser()));
+    api.me().then((u) => { setMe(u); setFullName(u.fullName ?? ""); setPhone(u.phone ?? ""); setAvatar(u.avatar ?? null); }).catch(() => setMe(getUser()));
   }, [ready]);
 
   useEffect(() => {
@@ -66,7 +67,7 @@ export default function Profile() {
     finally { setHhBusy(false); }
   }
 
-  async function persist(patch: { fullName?: string; avatar?: string | null }) {
+  async function persist(patch: { fullName?: string; avatar?: string | null; phone?: string | null }) {
     setErr(null); setSavedMsg(null);
     try {
       const u = await api.updateProfile(patch);
@@ -115,12 +116,19 @@ export default function Profile() {
             <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onPickFile} />
           </div>
         </div>
-        <div className="field" style={{ marginTop: 16 }}>
-          <label>Name</label>
-          <input value={fullName} onChange={(e) => { setFullName(e.target.value); setSavedMsg(null); }} placeholder="Your name" />
+        <div className="row2" style={{ marginTop: 16 }}>
+          <div className="field">
+            <label>Name</label>
+            <input value={fullName} onChange={(e) => { setFullName(e.target.value); setSavedMsg(null); }} placeholder="Your name" />
+          </div>
+          <div className="field">
+            <label>Mobile number</label>
+            <input type="tel" value={phone} onChange={(e) => { setPhone(e.target.value); setSavedMsg(null); }} placeholder="+91 98765 43210" />
+            <div className="hint">In full international format (+91…) for SMS alerts.</div>
+          </div>
         </div>
         <div className="actions">
-          <button className="btn primary small" type="button" onClick={() => persist({ fullName })}>Save profile</button>
+          <button className="btn primary small" type="button" onClick={() => persist({ fullName, phone })}>Save profile</button>
           {savedMsg && <span style={{ color: "var(--good)", fontSize: 12.5 }}>{savedMsg}</span>}
         </div>
       </div>

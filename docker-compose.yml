@@ -26,6 +26,7 @@ services:
       - ./apps/api/db/income_tax.sql:/docker-entrypoint-initdb.d/13-income_tax.sql:ro
       - ./apps/api/db/memberships.sql:/docker-entrypoint-initdb.d/14-memberships.sql:ro
       - ./apps/api/db/asset_photos.sql:/docker-entrypoint-initdb.d/15-asset_photos.sql:ro
+      - ./apps/api/db/notifications.sql:/docker-entrypoint-initdb.d/16-notifications.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U kunatra -d kunatra"]
       interval: 3s
