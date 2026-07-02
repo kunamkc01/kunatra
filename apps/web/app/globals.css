@@ -98,6 +98,7 @@ tbody tr:last-child td { border-bottom: 0; }
 .p-bad { background: var(--bad-bg); color: var(--bad); }
 .p-acc { background: var(--accent-bg); color: var(--accent); }
 .p-muted { background: var(--tint); color: var(--muted); }
+.p-info { background: var(--tint); color: var(--slate); }
 
 /* Alert strips */
 .strip { margin-top: 18px; border-radius: var(--radius); padding: 12px 15px; font-size: 13.5px; display: flex; align-items: center; gap: 10px; }
@@ -194,6 +195,12 @@ tbody tr:last-child td { border-bottom: 0; }
 .menu-item { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; background: transparent; border: 0; cursor: pointer; font: inherit; font-size: 13.5px; color: var(--ink); padding: 8px 10px; border-radius: 8px; text-decoration: none; }
 .menu-item:hover { background: var(--tint); }
 .menu-item svg { width: 16px; height: 16px; color: var(--slate); flex: none; }
+.menu-item.is-active { background: var(--tint); font-weight: 600; }
+.menu-item-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu-item-meta { font-size: 11px; color: var(--muted); flex: none; }
+.menu-check { width: 15px !important; height: 15px !important; color: var(--brand, var(--ink)) !important; }
+.menu-section { border-bottom: 1px solid var(--line); margin-bottom: 6px; padding-bottom: 6px; }
+.menu-section-label { font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); padding: 2px 10px 4px; }
 
 @media (max-width: 620px) {
   body { padding: 12px 8px; }

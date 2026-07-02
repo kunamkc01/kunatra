@@ -13,8 +13,9 @@ export default function Assets() {
   const { user, ready } = useAuth();
   const role = user?.role;
   const isOwner = role === "owner";
-  const canSeeFinancials = role !== "operations"; // owner + advisor
-  const canEditAssets = role === "owner" || role === "operations"; // not advisor (read-only)
+  const canManageMoney = role === "owner" || role === "manager"; // loans, members, cash flow
+  const canSeeFinancials = role !== "operations"; // everyone but operations
+  const canEditAssets = role === "owner" || role === "manager" || role === "operations" || role === "member"; // not advisor (read-only)
   const hhId = user?.householdId ?? null;
   const [household, setHousehold] = useState<Household | null>(null);
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -104,7 +105,7 @@ export default function Assets() {
         )}
         <td style={{ whiteSpace: "nowrap" }}>
           {canEditAssets && <button className="btn ghost small" onClick={() => setAssetSheet({ open: true, edit: a })}>Edit</button>}
-          {isOwner && <button className="btn ghost small danger" onClick={() => removeAsset(a)}>Delete</button>}
+          {(canManageMoney || (role === "member" && a.memberId === user?.memberId)) && <button className="btn ghost small danger" onClick={() => removeAsset(a)}>Delete</button>}
           {!canEditAssets && <span className="muted" style={{ fontSize: 12 }}>view</span>}
         </td>
       </tr>
@@ -147,7 +148,7 @@ export default function Assets() {
       {canSeeFinancials && (
         <>
           {/* Family members */}
-          <div className="sec-label">Family members{isOwner && <button className="btn small primary" onClick={() => setMemberSheet({ open: true, edit: null })}>+ Add member</button>}</div>
+          <div className="sec-label">Family members{canManageMoney && <button className="btn small primary" onClick={() => setMemberSheet({ open: true, edit: null })}>+ Add member</button>}</div>
           {members.length === 0 && <div className="empty">Add earners to aggregate the household income and see each person's own net worth.</div>}
           {members.map((m) => (
             <div className="row-item" key={m.id}>
@@ -159,10 +160,10 @@ export default function Assets() {
                 {assets.filter((a) => a.memberId === m.id).length} asset(s)
                 {m.monthlyGross != null ? ` · gross ${inr(m.monthlyGross)}${m.monthlyTds ? ` − TDS ${inr(m.monthlyTds)}` : ""}` : ""}
               </div>
-              {isOwner && (
+              {(canManageMoney || (role === "member" && m.id === user?.memberId)) && (
                 <div className="acts">
                   <button className="btn ghost small" onClick={() => setMemberSheet({ open: true, edit: m })}>Edit</button>
-                  <button className="btn ghost small danger" onClick={() => removeMember(m)}>Remove</button>
+                  {canManageMoney && <button className="btn ghost small danger" onClick={() => removeMember(m)}>Remove</button>}
                 </div>
               )}
             </div>
@@ -174,7 +175,7 @@ export default function Assets() {
           )}
 
           {/* Loans */}
-          <div className="sec-label">Loans{isOwner && <button className="btn small primary" onClick={() => setLoanSheet({ open: true, edit: null })}>+ Add loan</button>}</div>
+          <div className="sec-label">Loans{canManageMoney && <button className="btn small primary" onClick={() => setLoanSheet({ open: true, edit: null })}>+ Add loan</button>}</div>
           {loans.length === 0 && <div className="empty">No loans — or add one to see your leverage.</div>}
           {loans.map((l) => (
             <div className="row-item" key={l.id}>
@@ -186,7 +187,7 @@ export default function Assets() {
                 EMI {inr(l.emiMonthly)}/mo{l.ratePct != null ? ` · ${l.ratePct}%` : ""}
                 {l.securedAssetId ? ` · against ${assetName(l.securedAssetId) ?? "an asset"}` : " · unsecured"}
               </div>
-              {isOwner && (
+              {canManageMoney && (
                 <div className="acts">
                   <button className="btn ghost small" onClick={() => setLoanSheet({ open: true, edit: l })}>Edit</button>
                   <button className="btn ghost small danger" onClick={() => removeLoan(l)}>Delete</button>
@@ -196,16 +197,18 @@ export default function Assets() {
           ))}
 
           {/* Cash flow */}
-          <CashflowPanel household={household} onSaved={refresh} readOnly={!isOwner} membersDriveIncome={hasMembersIncome} />
+          <CashflowPanel household={household} onSaved={refresh} readOnly={!canManageMoney} membersDriveIncome={hasMembersIncome} />
         </>
       )}
 
       <div className="explain">
-        {isOwner
+        {canManageMoney
           ? "LTV is on current market value; equity is value minus the loan secured on that asset. Solar, lifts and UPS can be recorded as components of the property they serve — their cost rolls up to the parent."
-          : role === "advisor"
-            ? "Advisor view — the full financial picture, read-only. You can see net worth, loans, LTV and returns, but changes stay with the owner."
-            : "You have operational access: keep the asset register and property details current. Financial totals, loans and cash flow are the owner's view."}
+          : role === "member"
+            ? "Your view — your own salary and assets, plus the household picture read-only. You can add and edit the assets attributed to you; loans and cash flow stay with the owner."
+            : role === "advisor"
+              ? "Advisor view — the full financial picture, read-only. You can see net worth, loans, LTV and returns, but changes stay with the owner."
+              : "You have operational access: keep the asset register and property details current. Financial totals, loans and cash flow are the owner's view."}
       </div>
 
       {assetSheet.open && hhId && (

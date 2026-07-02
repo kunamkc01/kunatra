@@ -33,7 +33,7 @@ const RATING_TILE: Record<string, string> = { good: "g", fair: "w", poor: "b" };
 export default function Operations() {
   const { user, ready } = useAuth();
   const hhId = user?.householdId ?? null;
-  const isOwner = user?.role === "owner";
+  const isOwner = user?.role === "owner" || user?.role === "manager"; // decision-makers (approve/reject)
   const [household, setHousehold] = useState<Household | null>(null);
   const [tab, setTab] = useState<Tab>("work");
   const [assets, setAssets] = useState<Asset[]>([]);

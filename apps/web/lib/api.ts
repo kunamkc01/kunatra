@@ -174,7 +174,14 @@ export interface OperationsSummary {
   lastInspection: { rating: InspectionRating; on: string } | null;
 }
 
-export type Role = "owner" | "operations" | "advisor";
+export type Role = "owner" | "manager" | "member" | "operations" | "advisor";
+
+export interface Membership {
+  householdId: string;
+  householdName: string;
+  role: Role;
+  memberId: string | null;
+}
 
 export type ApprovalStatus = "pending" | "approved" | "rejected";
 export interface Approval {
@@ -198,6 +205,10 @@ export interface User {
   fullName: string | null;
   role: Role;
   avatar?: string | null;
+  memberId?: string | null;
+  households?: Membership[];
+  // present on team listings (a user's access within one household)
+  memberName?: string | null;
   createdAt?: string;
 }
 
@@ -245,6 +256,8 @@ export const api = {
   login: (b: { email: string; password: string }) =>
     req<Session>("/api/auth/login", { method: "POST", body: JSON.stringify(b) }),
   me: () => req<User>("/api/auth/me"),
+  switchHousehold: (householdId: string) =>
+    req<Session>("/api/auth/switch", { method: "POST", body: JSON.stringify({ householdId }) }),
   updateProfile: (b: { fullName?: string; avatar?: string | null }) =>
     req<User>("/api/auth/profile", { method: "PATCH", body: JSON.stringify(b) }),
   changePassword: (b: { currentPassword: string; newPassword: string }) =>
@@ -258,8 +271,8 @@ export const api = {
 
   // team (owner only)
   listUsers: (id: string) => req<User[]>(`/api/households/${id}/users`),
-  createUser: (id: string, b: { email: string; password: string; fullName?: string; role: Role }) =>
-    req<User>(`/api/households/${id}/users`, { method: "POST", body: JSON.stringify(b) }),
+  createUser: (id: string, b: { email: string; password?: string; fullName?: string; role: Role; memberId?: string | null }) =>
+    req<{ ok: boolean; userId: string }>(`/api/households/${id}/users`, { method: "POST", body: JSON.stringify(b) }),
   deleteUser: (userId: string) => req<void>(`/api/users/${userId}`, { method: "DELETE" }),
 
   // family members

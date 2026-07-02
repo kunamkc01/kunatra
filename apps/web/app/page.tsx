@@ -12,7 +12,7 @@ const tileClass = (sev?: string) => (sev === "good" ? "g" : sev === "watch" ? "w
 const stripClass = (sev?: string) => (sev === "good" ? "good" : sev === "watch" ? "warn" : "bad");
 
 export default function Portfolio() {
-  const { user, ready } = useAuth({ requireRole: ["owner", "advisor"] });
+  const { user, ready } = useAuth({ requireRole: ["owner", "manager", "member", "advisor"] });
   const isOwner = user?.role === "owner";
   const [household, setHousehold] = useState<Household | null>(null);
   const [assessment, setAssessment] = useState<Assessment | null>(null);
