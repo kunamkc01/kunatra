@@ -49,7 +49,11 @@ export function Shell({ office, children }: { office?: string | null; children: 
   useEffect(() => { setMenuOpen(false); }, [pathname]);
 
   const activeFor = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
-  const tabs = TABS.filter((t) => !user || t.roles.includes(user.role));
+  const roleTabs = TABS.filter((t) => !user || t.roles.includes(user.role));
+  // Platform admin is a flag (email allowlist), not a household role.
+  const tabs = user?.isAdmin
+    ? [...roleTabs, { href: "/admin", label: "Admin", roles: [] as Role[], icon: <path d="M12 2l7 4v6c0 4-3 7-7 8-4-1-7-4-7-8V6l7-4zM9.5 12l2 2 4-4" /> }]
+    : roleTabs;
 
   function logout() {
     clearSession();

@@ -258,6 +258,7 @@ export interface User {
   role: Role;
   avatar?: string | null;
   phone?: string | null;
+  isAdmin?: boolean;
   memberId?: string | null;
   households?: Membership[];
   // present on team listings (a user's access within one household)
@@ -266,6 +267,17 @@ export interface User {
 }
 
 export interface Session { token: string; user: User; }
+
+export interface AdminStats {
+  users: number; households: number; people: number; assets: number; properties: number;
+  rentedProperties: number; loans: number; vendors: number; workOrders: number;
+  newUsers7d: number; newUsers30d: number; activeHouseholds: number;
+  signupsByWeek: { week: string; count: number }[];
+}
+export interface AdminUser {
+  id: string; email: string; fullName: string | null; phone: string | null;
+  createdAt: string; householdCount: number; roles: string[];
+}
 
 export class ApiError extends Error {
   status: number;
@@ -428,6 +440,10 @@ export const api = {
 
   // audit trail (owner only)
   listAudit: (id: string) => req<AuditEntry[]>(`/api/households/${id}/audit`),
+
+  // platform admin (app operator)
+  adminStats: () => req<AdminStats>("/api/admin/stats"),
+  adminUsers: () => req<AdminUser[]>("/api/admin/users"),
 
   // approval workflow
   listApprovals: (id: string) => req<Approval[]>(`/api/households/${id}/approvals`),
