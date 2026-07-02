@@ -25,7 +25,12 @@ cat > "$TMP/containers.json" <<JSON
       "DATABASE_URL": "${DB_URL}",
       "AUTH_SECRET": "${AUTH_SECRET}",
       "FIELD_ENCRYPTION_KEY": "${FIELD_ENCRYPTION_KEY}",
-      "CORS_ORIGIN": "*"
+      "CORS_ORIGIN": "*",
+      "APP_URL": "${APP_URL:-}",
+      "SES_FROM": "${SES_FROM:-no-reply@kunatra.com}",
+      "NOTIFY_REGION": "${AWS_REGION}",
+      "NOTIFY_ACCESS_KEY_ID": "${NOTIFY_ACCESS_KEY_ID:-}",
+      "NOTIFY_SECRET_ACCESS_KEY": "${NOTIFY_SECRET_ACCESS_KEY:-}"
     }
   }
 }

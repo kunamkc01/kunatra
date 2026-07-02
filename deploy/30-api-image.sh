@@ -13,11 +13,12 @@ else
   echo "  · created"
 fi
 
-log "Waiting for the service to be READY to accept an image push"
-until [[ "$(awsq lightsail get-container-services --service-name "$LS_SERVICE" --query 'containerServices[0].state' --output text)" == "READY" ]]; do
+log "Waiting for the service to accept an image push"
+# READY = fresh service, RUNNING = already has a deployment; both accept a push.
+until case "$(awsq lightsail get-container-services --service-name "$LS_SERVICE" --query 'containerServices[0].state' --output text)" in READY|RUNNING) true;; *) false;; esac; do
   sleep 10; printf '.'
 done
-echo " ready"
+echo " ok"
 
 log "Building atlas-api for linux/amd64"
 docker buildx build --platform linux/amd64 -f "$REPO/Dockerfile.api" -t kunatra-api:latest --load "$REPO"
