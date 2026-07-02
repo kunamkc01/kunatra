@@ -367,13 +367,21 @@ export const getUser = (): User | null => {
   return raw ? (JSON.parse(raw) as User) : null;
 };
 
+/** Fired in-tab whenever the stored user changes, so the shell can update live
+ * (the native `storage` event only fires in *other* tabs). */
+export const USER_EVENT = "kunatra:user";
+const announceUser = () => { if (typeof window !== "undefined") window.dispatchEvent(new Event(USER_EVENT)); };
+
 export const saveSession = (s: Session) => {
   window.localStorage.setItem(TOKEN_KEY, s.token);
   window.localStorage.setItem(USER_KEY, JSON.stringify(s.user));
+  announceUser();
 };
 
 export const setStoredUser = (user: User) => {
-  if (typeof window !== "undefined") window.localStorage.setItem(USER_KEY, JSON.stringify(user));
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(USER_KEY, JSON.stringify(user));
+  announceUser();
 };
 
 export const clearSession = () => {

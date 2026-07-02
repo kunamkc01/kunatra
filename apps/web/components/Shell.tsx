@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { getUser, clearSession, type Role } from "@/lib/api";
+import { getUser, clearSession, USER_EVENT, type Role } from "@/lib/api";
 
 const TABS: { href: string; label: string; roles: Role[]; icon: React.ReactNode }[] = [
   { href: "/", label: "Portfolio", roles: ["owner", "advisor"], icon: <path d="M12 3v9l6.5 3.5M21 12a9 9 0 1 1-9-9" /> },
@@ -17,7 +17,14 @@ export function Shell({ office, children }: { office?: string | null; children: 
   const router = useRouter();
   const [user, setUser] = useState<ReturnType<typeof getUser>>(null);
 
-  useEffect(() => { setUser(getUser()); }, []);
+  useEffect(() => {
+    const sync = () => setUser(getUser());
+    sync();
+    // Update live when the profile changes (same tab) or another tab signs in/out.
+    window.addEventListener(USER_EVENT, sync);
+    window.addEventListener("storage", sync);
+    return () => { window.removeEventListener(USER_EVENT, sync); window.removeEventListener("storage", sync); };
+  }, []);
 
   const activeFor = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
   const tabs = TABS.filter((t) => !user || t.roles.includes(user.role));
