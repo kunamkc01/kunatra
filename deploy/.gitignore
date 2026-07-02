@@ -1,0 +1,3 @@
+# Real config carries the DB password and resolved endpoints — never commit it.
+config.env
+*.state
