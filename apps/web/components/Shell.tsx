@@ -1,8 +1,10 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { getUser, clearSession, USER_EVENT, type Role } from "@/lib/api";
+
+const roleLabel = (r: Role) => (r === "owner" ? "Owner" : r === "advisor" ? "Advisor" : "Operations");
 
 const TABS: { href: string; label: string; roles: Role[]; icon: React.ReactNode }[] = [
   { href: "/", label: "Portfolio", roles: ["owner", "advisor"], icon: <path d="M12 3v9l6.5 3.5M21 12a9 9 0 1 1-9-9" /> },
@@ -16,6 +18,8 @@ export function Shell({ office, children }: { office?: string | null; children: 
   const pathname = usePathname();
   const router = useRouter();
   const [user, setUser] = useState<ReturnType<typeof getUser>>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const sync = () => setUser(getUser());
@@ -25,6 +29,19 @@ export function Shell({ office, children }: { office?: string | null; children: 
     window.addEventListener("storage", sync);
     return () => { window.removeEventListener(USER_EVENT, sync); window.removeEventListener("storage", sync); };
   }, []);
+
+  // Close the user menu on outside click / Escape.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDown = (e: MouseEvent) => { if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMenuOpen(false); };
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => { window.removeEventListener("mousedown", onDown); window.removeEventListener("keydown", onKey); };
+  }, [menuOpen]);
+
+  // Close it whenever the route changes.
+  useEffect(() => { setMenuOpen(false); }, [pathname]);
 
   const activeFor = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
   const tabs = TABS.filter((t) => !user || t.roles.includes(user.role));
@@ -43,17 +60,31 @@ export function Shell({ office, children }: { office?: string | null; children: 
           <span className="office">{office ?? "your money, honestly"}</span>
         </div>
         {user && (
-          <div className="userchip">
-            <Link href="/profile" title="Profile" style={{ display: "flex" }}>
+          <div className="usermenu" ref={menuRef}>
+            <button className="usermenu-trigger" onClick={() => setMenuOpen((o) => !o)} aria-haspopup="menu" aria-expanded={menuOpen}>
               {user.avatar
                 ? <img className="avatar" src={user.avatar} alt="" />
                 : <span className="avatar avatar-fallback" style={{ fontSize: 13 }}>{(user.fullName || user.email).charAt(0).toUpperCase()}</span>}
-            </Link>
-            <span className="who">
-              <Link href="/profile" style={{ textDecoration: "none" }}><b>{user.fullName || user.email}</b></Link>
-              <span className="rolepill" style={{ marginTop: 2 }}><span className="dot" /> {user.role === "owner" ? "Owner" : user.role === "advisor" ? "Advisor" : "Operations"}</span>
-            </span>
-            <button className="btn small" onClick={logout}>Sign out</button>
+              <span className="usermenu-name">{user.fullName || user.email}</span>
+              <svg className="caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6" /></svg>
+            </button>
+            {menuOpen && (
+              <div className="menu" role="menu">
+                <div className="menu-head">
+                  <div className="menu-name">{user.fullName || "—"}</div>
+                  <div className="menu-email">{user.email}</div>
+                  <span className="rolepill" style={{ marginTop: 6 }}><span className="dot" /> {roleLabel(user.role)}</span>
+                </div>
+                <Link href="/profile" className="menu-item" role="menuitem">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z" /></svg>
+                  Profile &amp; password
+                </Link>
+                <button className="menu-item" role="menuitem" onClick={logout}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" /></svg>
+                  Sign out
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
