@@ -70,6 +70,23 @@ test('income splits salary (earned) from asset income (rent), with surplus', () 
   assert.equal(surplus?.value, 70_000); // 160k in − 50k EMI − 40k essentials
 });
 
+test('a monthly SIP is a committed outflow — it reduces surplus', () => {
+  const base = {
+    assets: [{ id: 'cash', name: 'Cash', assetClass: 'cash' as const, value: 500_000, liquid: true }],
+    loans: [],
+    income: { monthlyTakeHome: 100_000 },
+    expenses: { monthlyEssential: 40_000 },
+  };
+  const noSip = assess(base).signals.find((s) => s.key === 'surplus');
+  assert.equal(noSip?.value, 60_000); // 100k − 40k essentials
+
+  const withSip = assess({
+    ...base,
+    assets: [...base.assets, { id: 'mf', name: 'Index SIP', assetClass: 'mutual_fund', value: 200_000, liquid: true, monthlyContribution: 15_000 }],
+  }).signals.find((s) => s.key === 'surplus');
+  assert.equal(withSip?.value, 45_000); // 60k − 15k SIP
+});
+
 test('signals describe, with severities', () => {
   const { signals } = assess(salariedSample);
   const ltv = signals.find((s) => s.key === 'ltv');

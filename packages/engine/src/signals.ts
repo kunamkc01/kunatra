@@ -25,12 +25,15 @@ export function signals(p: Position, asOf?: Date | string): Signal[] {
   const inc = income(p);
   const out: Signal[] = [];
 
-  // Monthly surplus — everything coming in (salary + rent) less EMIs and essentials.
+  // Monthly surplus — everything coming in (salary + rent) less EMIs, essentials
+  // and recurring investments (SIPs), which are committed cash out each month.
   if (inc.total > 0) {
     const totalEmi = p.loans.reduce((s, l) => s + l.emiMonthly, 0);
     const essential = p.expenses?.monthlyEssential ?? 0;
-    const surplus = inc.total - totalEmi - essential;
+    const sip = inv.monthlyContribution;
+    const surplus = inc.total - totalEmi - essential - sip;
     const pct = (surplus / inc.total) * 100;
+    const outgoings = sip > 0 ? 'EMIs, essentials and SIPs' : 'EMIs and essentials';
     out.push({
       key: 'surplus',
       label: 'Monthly surplus',
@@ -38,8 +41,8 @@ export function signals(p: Position, asOf?: Date | string): Signal[] {
       display: formatINR(surplus),
       severity: surplus < 0 ? 'warning' : pct < 10 ? 'watch' : 'good',
       message: surplus >= 0
-        ? `After EMIs and essentials you keep ${formatINR(surplus)} a month.`
-        : `You spend ${formatINR(-surplus)} more than you bring in each month.`,
+        ? `After ${outgoings} you keep ${formatINR(surplus)} a month.`
+        : `Your ${outgoings} run ${formatINR(-surplus)} more than you bring in each month.`,
     });
   }
 
