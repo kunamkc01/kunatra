@@ -144,7 +144,11 @@ export async function login(body: any) {
   if (!row || !verifyPassword(String(body.password ?? ''), row.password_hash)) {
     throw new HttpError(401, 'bad_credentials', 'Email or password is incorrect');
   }
-  return session(row.id, row.household_id);
+  // Land on your OWN finances first: a household you own, falling back to the
+  // home household (e.g. you were invited as a manager and own nothing yet).
+  const owned = await db().query(
+    `SELECT household_id FROM memberships WHERE user_id = $1 AND role = 'owner' ORDER BY created_at LIMIT 1`, [row.id]);
+  return session(row.id, owned.rows[0]?.household_id ?? row.household_id);
 }
 
 /** Switch the active household (must be one the user is a member of). */
@@ -189,7 +193,7 @@ export async function membershipsFor(userId: string) {
   const { rows } = await db().query(
     `SELECT m.household_id, h.display_name, m.role, m.member_id
        FROM memberships m JOIN households h ON h.id = m.household_id
-      WHERE m.user_id = $1 ORDER BY m.created_at`, [userId]);
+      WHERE m.user_id = $1 ORDER BY (m.role = 'owner') DESC, m.created_at`, [userId]);
   return rows.map((r) => ({ householdId: r.household_id, householdName: r.display_name, role: r.role as Role, memberId: r.member_id ?? null }));
 }
 

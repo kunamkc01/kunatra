@@ -57,6 +57,18 @@ test('family members', { skip: hasDb ? false : 'DATABASE_URL not set' }, async (
       assert.equal(b.assessment.netWorth.netWorth, 0); // B owns nothing
     });
 
+    await t.test("member expenses stay per-person and add to household essentials", async () => {
+      await call('PATCH', `/api/households/${householdId}`, { monthlyEssential: 40000 }, ownerTok); // shared spend
+      await call('PATCH', `/api/members/${memberA}`, { monthlyExpenses: 10000 }, ownerTok);        // A's own spend
+      // Household surplus = 160k income − 32k EMI − (40k shared + 10k A) = 78k.
+      const signals = (await call('GET', `/api/households/${householdId}/assessment`, undefined, ownerTok)).body.signals;
+      assert.equal(signals.find((s: any) => s.key === 'surplus')?.value, 78000);
+      // A's own picture uses A's own expenses (100k − 32k EMI − 10k = 58k).
+      const perMember = (await call('GET', `/api/households/${householdId}/members/assessment`, undefined, ownerTok)).body;
+      const a = perMember.find((m: any) => m.name === 'A');
+      assert.equal(a.assessment.signals.find((s: any) => s.key === 'surplus')?.value, 58000);
+    });
+
     await t.test('operations see member names but not incomes', async () => {
       await call('POST', `/api/households/${householdId}/users`, { email: email('ops'), password: 'secret123', role: 'operations' }, ownerTok);
       // login the ops user we just made

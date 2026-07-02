@@ -141,6 +141,13 @@ test('memberships: manager, member & household switch', { skip: hasDb ? false : 
       const newTok = created.body.token;
       // and as owner she can add a property there
       assert.equal((await call('POST', `/api/households/${newHh}/assets`, { name: 'Her flat', assetClass: 'real_estate', value: 4000000 }, newTok)).status, 201);
+      // login defaults to HER OWN finances (the household she owns), not the
+      // one she's merely a member/manager of.
+      const relogin = await call('POST', '/api/auth/login', { email: wifeEmail, password: 'secret123' });
+      assert.equal(relogin.body.user.householdId, newHh);
+      assert.equal(relogin.body.user.role, 'owner');
+      // owned households list first in the switcher
+      assert.equal(relogin.body.user.households[0].role, 'owner');
       await call('DELETE', `/api/households/${newHh}`, undefined, newTok);
     });
   } finally {

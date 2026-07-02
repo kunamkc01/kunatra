@@ -115,6 +115,8 @@ const memberRow = (r: any) => {
     monthlyGross: gross,
     monthlyTds: tds,
     monthlyNet: gross != null ? gross - (tds ?? 0) : null, // take-home
+    // Personal monthly spend — adds on top of the household's shared essentials.
+    monthlyExpenses: r.monthly_essential_paise != null ? paiseToRupees(r.monthly_essential_paise) : null,
     createdAt: r.created_at,
   };
 };
@@ -129,12 +131,14 @@ export async function createMember(householdId: string, body: any) {
   await getHousehold(householdId);
   const gross = money(body.monthlyGross, 'monthlyGross');
   const tds = money(body.monthlyTds, 'monthlyTds');
+  const expenses = money(body.monthlyExpenses, 'monthlyExpenses');
   const { rows } = await db().query(
-    `INSERT INTO members (household_id, name, monthly_gross_paise, monthly_tds_paise)
-     VALUES ($1,$2,$3,$4) RETURNING *`,
+    `INSERT INTO members (household_id, name, monthly_gross_paise, monthly_tds_paise, monthly_essential_paise)
+     VALUES ($1,$2,$3,$4,$5) RETURNING *`,
     [householdId, str(body.name, 'name', { required: true }),
      gross != null ? rupeesToPaise(gross) : null,
-     tds != null ? rupeesToPaise(tds) : null]
+     tds != null ? rupeesToPaise(tds) : null,
+     expenses != null ? rupeesToPaise(expenses) : null]
   );
   return memberRow(rows[0]);
 }
@@ -146,6 +150,7 @@ export async function updateMember(id: string, body: any) {
   if ('name' in body) push('name', str(body.name, 'name', { required: true }));
   if ('monthlyGross' in body) { const v = money(body.monthlyGross, 'monthlyGross'); push('monthly_gross_paise', v != null ? rupeesToPaise(v) : null); }
   if ('monthlyTds' in body) { const v = money(body.monthlyTds, 'monthlyTds'); push('monthly_tds_paise', v != null ? rupeesToPaise(v) : null); }
+  if ('monthlyExpenses' in body) { const v = money(body.monthlyExpenses, 'monthlyExpenses'); push('monthly_essential_paise', v != null ? rupeesToPaise(v) : null); }
   if (sets.length === 0) {
     const { rows } = await db().query(`SELECT * FROM members WHERE id = $1`, [id]);
     if (rows.length === 0) throw new HttpError(404, 'member_not_found');
