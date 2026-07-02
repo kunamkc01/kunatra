@@ -7,9 +7,9 @@ import { db, HttpError } from './pool.ts';
 const SECRET = process.env.AUTH_SECRET ?? 'dev-insecure-secret-change-me';
 const TOKEN_TTL_SEC = 60 * 60 * 24 * 7; // 7 days
 
-export type Role = 'owner' | 'operations' | 'advisor';
-const ROLES: Role[] = ['owner', 'operations', 'advisor'];
-export interface AuthUser { id: string; householdId: string; role: Role; email: string; }
+export type Role = 'owner' | 'manager' | 'member' | 'operations' | 'advisor';
+const ROLES: Role[] = ['owner', 'manager', 'member', 'operations', 'advisor'];
+export interface AuthUser { id: string; householdId: string; role: Role; email: string; memberId: string | null; }
 
 // Augment Express Request with the authenticated user.
 declare global {
@@ -110,12 +110,12 @@ export async function register(body: any) {
     const householdId = hh.rows[0].id;
     const u = await client.query(
       `INSERT INTO users (household_id, email, password_hash, full_name, role)
-       VALUES ($1,$2,$3,$4,'owner') RETURNING *`,
+       VALUES ($1,$2,$3,$4,'owner') RETURNING id`,
       [householdId, email, passwordHash, fullName]
     );
+    await client.query(`INSERT INTO memberships (user_id, household_id, role) VALUES ($1,$2,'owner')`, [u.rows[0].id, householdId]);
     await client.query('COMMIT');
-    const user = userRow(u.rows[0]);
-    return { token: tokenFor(user), user };
+    return session(u.rows[0].id, householdId);
   } catch (e) {
     await client.query('ROLLBACK');
     throw e;
@@ -131,12 +131,50 @@ export async function login(body: any) {
   if (!row || !verifyPassword(String(body.password ?? ''), row.password_hash)) {
     throw new HttpError(401, 'bad_credentials', 'Email or password is incorrect');
   }
-  const user = userRow(row);
-  return { token: tokenFor(user), user };
+  return session(row.id, row.household_id);
 }
 
-function tokenFor(user: { id: string; householdId: string; role: Role; email: string }) {
-  return signToken({ sub: user.id, hh: user.householdId, role: user.role, email: user.email });
+/** Switch the active household (must be one the user is a member of). */
+export async function switchHousehold(userId: string, body: any) {
+  const hh = typeof body.householdId === 'string' ? body.householdId : '';
+  const m = await resolveMembership(userId, hh);
+  if (!m) throw new HttpError(403, 'forbidden', 'No access to that household');
+  return session(userId, hh);
+}
+
+const tokenFor = (userId: string, householdId: string, email: string) =>
+  signToken({ sub: userId, hh: householdId, email });
+
+/** The households a user can access, with their role in each. */
+export async function membershipsFor(userId: string) {
+  const { rows } = await db().query(
+    `SELECT m.household_id, h.display_name, m.role, m.member_id
+       FROM memberships m JOIN households h ON h.id = m.household_id
+      WHERE m.user_id = $1 ORDER BY m.created_at`, [userId]);
+  return rows.map((r) => ({ householdId: r.household_id, householdName: r.display_name, role: r.role as Role, memberId: r.member_id ?? null }));
+}
+
+async function resolveMembership(userId: string, householdId: string): Promise<{ role: Role; memberId: string | null } | null> {
+  const { rows } = await db().query(`SELECT role, member_id FROM memberships WHERE user_id = $1 AND household_id = $2`, [userId, householdId]);
+  return rows[0] ? { role: rows[0].role as Role, memberId: rows[0].member_id ?? null } : null;
+}
+
+/** Build a login/switch response: token + user (with active household + role) + the households list. */
+async function session(userId: string, householdId: string) {
+  const households = await membershipsFor(userId);
+  if (households.length === 0) throw new HttpError(403, 'no_access', 'No household access');
+  const active = households.find((h) => h.householdId === householdId) ?? households[0];
+  const { rows } = await db().query(`SELECT * FROM users WHERE id = $1`, [userId]);
+  const base = userRow(rows[0]);
+  const user = { id: base.id, email: base.email, fullName: base.fullName, avatar: base.avatar,
+    householdId: active.householdId, role: active.role, memberId: active.memberId, households };
+  return { token: tokenFor(userId, active.householdId, base.email), user };
+}
+
+/** The current session's user, resolved for the active household. */
+export async function me(u: AuthUser) {
+  const s = await session(u.id, u.householdId);
+  return s.user;
 }
 
 /** Update the caller's own profile (name, avatar). */
@@ -146,7 +184,11 @@ export async function updateProfile(userId: string, body: any) {
   const push = (c: string, v: any) => { vals.push(v); sets.push(`${c} = $${vals.length}`); };
   if ('fullName' in body) push('full_name', typeof body.fullName === 'string' ? body.fullName.trim() || null : null);
   if ('avatar' in body) push('avatar', avatarOrNull(body.avatar));
-  if (sets.length === 0) return getUserById(userId);
+  if (sets.length === 0) {
+    const { rows } = await db().query(`SELECT * FROM users WHERE id = $1`, [userId]);
+    if (rows.length === 0) throw new HttpError(404, 'user_not_found');
+    return userRow(rows[0]);
+  }
   vals.push(userId);
   const { rows } = await db().query(`UPDATE users SET ${sets.join(', ')} WHERE id = $${vals.length} RETURNING *`, vals);
   if (rows.length === 0) throw new HttpError(404, 'user_not_found');
@@ -198,53 +240,92 @@ export async function resetWithToken(body: any) {
   return setPassword(payload.sub, body.newPassword);
 }
 
-export async function getUserById(id: string) {
-  const { rows } = await db().query(`SELECT * FROM users WHERE id = $1`, [id]);
-  if (rows.length === 0) throw new HttpError(404, 'user_not_found');
-  return userRow(rows[0]);
-}
-
+/** Everyone with access to a household, with their role (and person, for members). */
 export async function listUsers(householdId: string) {
   const { rows } = await db().query(
-    `SELECT * FROM users WHERE household_id = $1 ORDER BY role, email`, [householdId]);
-  return rows.map(userRow);
+    `SELECT u.id AS user_id, u.email, u.full_name, u.avatar, m.role, m.member_id, mem.name AS member_name
+       FROM memberships m JOIN users u ON u.id = m.user_id
+       LEFT JOIN members mem ON mem.id = m.member_id
+      WHERE m.household_id = $1 ORDER BY m.role, u.email`, [householdId]);
+  return rows.map((r) => ({
+    id: r.user_id, email: r.email, fullName: r.full_name ?? null, avatar: r.avatar ?? null,
+    role: r.role as Role, memberId: r.member_id ?? null, memberName: r.member_name ?? null,
+  }));
 }
 
-/** Owner adds a teammate (owner or operations) to their household. */
+/** True if the user has any access to this household (else 404). */
+async function assertMembership(userId: string, householdId: string) {
+  const m = await resolveMembership(userId, householdId);
+  if (!m) throw new HttpError(404, 'not_a_member');
+}
+
+/**
+ * Grant someone access to a household. Existing users just get a new membership
+ * (so one login can span households); new emails get an account created too.
+ */
 export async function createUser(householdId: string, body: any) {
   const email = normEmail(body.email);
-  const passwordHash = hashPassword(body.password);
   const role: Role = ROLES.includes(body.role) ? body.role : 'operations';
   const fullName = typeof body.fullName === 'string' ? body.fullName.trim() : null;
+  const memberId = role === 'member' && typeof body.memberId === 'string' && body.memberId ? body.memberId : null;
+  if (role === 'member' && !memberId) throw new HttpError(400, 'invalid_input', 'A member login must be linked to a person');
+  if (memberId) {
+    const mm = await db().query(`SELECT 1 FROM members WHERE id = $1 AND household_id = $2`, [memberId, householdId]);
+    if (!mm.rowCount) throw new HttpError(400, 'invalid_input', 'That person is not in this household');
+  }
+
+  const client = await db().connect();
   try {
-    const { rows } = await db().query(
-      `INSERT INTO users (household_id, email, password_hash, full_name, role)
-       VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-      [householdId, email, passwordHash, fullName, role]
-    );
-    return userRow(rows[0]);
+    await client.query('BEGIN');
+    const existing = await client.query(`SELECT id FROM users WHERE email = $1`, [email]);
+    let userId: string;
+    if (existing.rowCount) {
+      userId = existing.rows[0].id;
+    } else {
+      const pw = hashPassword(body.password); // required (and length-checked) for new accounts
+      const u = await client.query(
+        `INSERT INTO users (household_id, email, password_hash, full_name, role) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+        [householdId, email, pw, fullName, role]
+      );
+      userId = u.rows[0].id;
+    }
+    await client.query(`INSERT INTO memberships (user_id, household_id, role, member_id) VALUES ($1,$2,$3,$4)`, [userId, householdId, role, memberId]);
+    await client.query('COMMIT');
+    return { ok: true, userId };
   } catch (e: any) {
-    if (e?.code === '23505') throw new HttpError(409, 'email_taken', 'That email is already registered');
+    await client.query('ROLLBACK');
+    if (e?.code === '23505') throw new HttpError(409, 'already_member', 'That person already has access to this household');
     throw e;
+  } finally {
+    client.release();
   }
 }
 
-export async function deleteUser(id: string) {
-  const { rowCount } = await db().query(`DELETE FROM users WHERE id = $1`, [id]);
-  if (rowCount === 0) throw new HttpError(404, 'user_not_found');
+/** Revoke a user's access to one household (removes the membership, keeps their account). */
+export async function deleteUser(userId: string, householdId: string) {
+  const { rowCount } = await db().query(`DELETE FROM memberships WHERE user_id = $1 AND household_id = $2`, [userId, householdId]);
+  if (rowCount === 0) throw new HttpError(404, 'not_a_member');
+}
+
+/** Owner resets a teammate's password (only for someone in this household). */
+export async function resetTeammatePassword(userId: string, householdId: string, newPassword: string) {
+  await assertMembership(userId, householdId);
+  return setPassword(userId, newPassword);
 }
 
 // ---- middleware -----------------------------------------------------------
 
-/** Require a valid bearer token; attaches req.user. */
-export function authenticate(req: Request, _res: Response, next: NextFunction) {
+/** Require a valid bearer token; resolves the caller's role in the active household. */
+export async function authenticate(req: Request, _res: Response, next: NextFunction) {
   const header = req.headers.authorization ?? '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) return next(new HttpError(401, 'unauthenticated', 'Sign in to continue'));
   try {
     const p = verifyToken(token);
-    if (p.purpose) return next(new HttpError(401, 'invalid_token')); // e.g. a reset token can't be a session
-    req.user = { id: p.sub, householdId: p.hh, role: p.role, email: p.email ?? '' };
+    if (p.purpose) throw new HttpError(401, 'invalid_token'); // e.g. a reset token can't be a session
+    const m = await resolveMembership(p.sub, p.hh);
+    if (!m) throw new HttpError(401, 'invalid_token', 'No access to that household');
+    req.user = { id: p.sub, householdId: p.hh, role: m.role, email: p.email ?? '', memberId: m.memberId };
     next();
   } catch (e) {
     next(e);
@@ -280,6 +361,41 @@ export function scopeResource(table: string) {
       next(e);
     }
   };
+}
+
+/**
+ * For assets/loans (which carry member_id): scope to the caller's household, and —
+ * for a 'member' login — to their own person's items only.
+ */
+export function scopeOwned(table: string) {
+  return async (req: Request, _res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) throw new HttpError(401, 'unauthenticated');
+      const { rows } = await db().query(`SELECT household_id, member_id FROM ${table} WHERE id = $1`, [req.params.id]);
+      if (rows.length === 0) throw new HttpError(404, 'not_found');
+      if (rows[0].household_id !== req.user.householdId) throw new HttpError(403, 'forbidden');
+      if (req.user.role === 'member' && rows[0].member_id !== req.user.memberId) {
+        throw new HttpError(403, 'not_yours', 'You can only manage your own items');
+      }
+      next();
+    } catch (e) {
+      next(e);
+    }
+  };
+}
+
+/** A 'member' login can only create items attributed to their own person. */
+export function forceMemberOwnership(req: Request, _res: Response, next: NextFunction) {
+  if (req.user?.role === 'member') req.body = { ...req.body, memberId: req.user.memberId };
+  next();
+}
+
+/** A 'member' login can only edit their own person record; owners/managers, anyone. */
+export function memberSelfOnly(req: Request, _res: Response, next: NextFunction) {
+  if (req.user?.role === 'member' && req.params.id !== req.user.memberId) {
+    return next(new HttpError(403, 'not_yours', 'You can only edit your own details'));
+  }
+  next();
 }
 
 /** Like scopeResource but for resources reached via a join (sql must select household_id for :id). */

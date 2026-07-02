@@ -51,7 +51,7 @@ test('profile, passwords & recurring ops', { skip: hasDb ? false : 'DATABASE_URL
     await t.test('owner resets a teammate password', async () => {
       const opsEmail = email('ops');
       const u = await call('POST', `/api/households/${householdId}/users`, { email: opsEmail, password: 'secret123', role: 'operations' }, ownerTok);
-      assert.equal((await call('POST', `/api/users/${u.body.id}/reset-password`, { newPassword: 'reset9999' }, ownerTok)).status, 200);
+      assert.equal((await call('POST', `/api/users/${u.body.userId}/reset-password`, { newPassword: 'reset9999' }, ownerTok)).status, 200);
       assert.equal((await call('POST', '/api/auth/login', { email: opsEmail, password: 'reset9999' })).status, 200);
     });
 
