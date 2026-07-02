@@ -11,7 +11,9 @@ import * as approvals from './approvals.ts';
 import { auditMiddleware, listAudit } from './audit.ts';
 
 export const app = express();
-app.use(express.json());
+// Bodies can carry downscaled images (avatars, asset photos) as data URLs, so
+// allow well above the per-photo cap enforced in repo.ts (~2.5MB).
+app.use(express.json({ limit: '8mb' }));
 
 // Permissive CORS for local development (Next.js dev server on :3000).
 app.use((_req, res, next) => {
@@ -45,7 +47,7 @@ app.use((req, res, next) => {
   return auth.authenticate(req, res, next);
 });
 
-const { requireRole, sameHousehold, scopeResource, scopeVia, scopeOwned, forceMemberOwnership, memberSelfOnly } = auth;
+const { requireRole, sameHousehold, scopeResource, scopeVia, scopeOwned, scopeOwnedVia, forceMemberOwnership, memberSelfOnly } = auth;
 const ownerOnly = requireRole('owner');                                   // account/team decisions
 const manageMoney = requireRole('owner', 'manager');                       // loans, cash flow, members, approvals
 const financialView = requireRole('owner', 'manager', 'advisor', 'member'); // everyone but operations sees the money
@@ -96,6 +98,11 @@ app.delete('/api/assets/:id', requireRole('owner', 'manager', 'member'), scopeOw
 app.get('/api/assets/:id/valuations', scopeResource('assets'), h(async (req, res) => res.json(await repo.listValuations(req.params.id))));
 app.post('/api/assets/:id/valuations', editOps, scopeResource('assets'), h(async (req, res) => res.status(201).json(await repo.addValuation(req.params.id, req.body))));
 app.delete('/api/valuations/:id', editOps, scopeVia('SELECT a.household_id FROM valuations v JOIN assets a ON a.id = v.asset_id WHERE v.id = $1'), h(async (req, res) => { await repo.deleteValuation(req.params.id); res.sendStatus(204); }));
+// ---- asset photos (member can manage their own asset's pictures) ----------
+app.get('/api/assets/:id/photos', scopeResource('assets'), h(async (req, res) => res.json(await repo.listPhotos(req.params.id))));
+app.post('/api/assets/:id/photos', editAssets, scopeOwned('assets'), h(async (req, res) => res.status(201).json(await repo.addPhoto(req.params.id, req.body))));
+app.delete('/api/photos/:id', editAssets, scopeOwnedVia('SELECT a.household_id, a.member_id FROM asset_photos p JOIN assets a ON a.id = p.asset_id WHERE p.id = $1'), h(async (req, res) => { await repo.deletePhoto(req.params.id); res.sendStatus(204); }));
+
 app.get('/api/assets/:id/contributions', scopeResource('assets'), h(async (req, res) => res.json(await repo.listContributions(req.params.id))));
 app.post('/api/assets/:id/contributions', editOps, scopeResource('assets'), h(async (req, res) => res.status(201).json(await repo.addContribution(req.params.id, req.body))));
 app.post('/api/assets/:id/contributions/schedule', editOps, scopeResource('assets'), h(async (req, res) => res.status(201).json(await repo.addSipSchedule(req.params.id, req.body))));

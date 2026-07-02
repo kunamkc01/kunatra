@@ -374,6 +374,39 @@ export async function deleteValuation(id: string) {
   }
 }
 
+// ---- asset photos ---------------------------------------------------------
+
+const MAX_PHOTO = 2_500_000; // ~1.8MB image as a data URL (downscaled client-side)
+function photoDataUrl(v: unknown): string {
+  if (typeof v !== 'string' || !v.startsWith('data:image/')) throw new HttpError(400, 'invalid_input', 'photo must be an image data URL');
+  if (v.length > MAX_PHOTO) throw new HttpError(400, 'photo_too_large', 'Please choose a smaller image');
+  return v;
+}
+
+const photoRow = (r: any) => ({ id: r.id, assetId: r.asset_id, dataUrl: r.data_url, caption: r.caption ?? null, createdAt: r.created_at });
+
+export async function listPhotos(assetId: string) {
+  const { rows } = await db().query(`SELECT * FROM asset_photos WHERE asset_id = $1 ORDER BY created_at, id`, [assetId]);
+  return rows.map(photoRow);
+}
+
+export async function addPhoto(assetId: string, body: any) {
+  const dataUrl = photoDataUrl(body.dataUrl);
+  const caption = str(body.caption, 'caption') ?? null;
+  const { rows } = await db().query(
+    `INSERT INTO asset_photos (asset_id, household_id, data_url, caption)
+       SELECT $1, a.household_id, $2, $3 FROM assets a WHERE a.id = $1 RETURNING *`,
+    [assetId, dataUrl, caption]
+  );
+  if (rows.length === 0) throw new HttpError(404, 'asset_not_found');
+  return photoRow(rows[0]);
+}
+
+export async function deletePhoto(id: string) {
+  const { rowCount } = await db().query(`DELETE FROM asset_photos WHERE id = $1`, [id]);
+  if (rowCount === 0) throw new HttpError(404, 'photo_not_found');
+}
+
 // ---- contributions ledger (drives XIRR) -----------------------------------
 
 /** Signed rupee amount (contributions may be negative = withdrawals). */
