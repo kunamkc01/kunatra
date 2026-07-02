@@ -1,7 +1,7 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { api, type Asset, type AssetDetail, type Member } from "@/lib/api";
 import { inr, inrExact, assetClassLabel } from "@/lib/format";
 import { useAuth } from "@/lib/useAuth";
@@ -10,8 +10,17 @@ import { AssetSheet, PhotoGallery, ValueHistory, ContributionLedger } from "@/co
 
 const pct = (v: number | null | undefined, dp = 1) => (v == null ? "—" : `${v.toFixed(dp)}%`);
 
+// useSearchParams must sit inside a Suspense boundary for static export.
 export default function AssetDetailPage() {
-  const { id } = useParams<{ id: string }>();
+  return (
+    <Suspense fallback={<Shell><div /></Shell>}>
+      <AssetDetailView />
+    </Suspense>
+  );
+}
+
+function AssetDetailView() {
+  const id = useSearchParams().get("id") ?? "";
   const router = useRouter();
   const { user, ready } = useAuth();
   const role = user?.role;
@@ -29,6 +38,7 @@ export default function AssetDetailPage() {
   const canManagePhotos = canEdit; // members are scoped server-side to their own
 
   const load = useCallback(async () => {
+    if (!id) return;
     setErr(null);
     try {
       const [a, d] = await Promise.all([api.getAsset(id), api.assetDetail(id)]);
@@ -117,7 +127,7 @@ export default function AssetDetailPage() {
         <>
           <div className="sec-label">Components</div>
           {detail.children.map((c) => (
-            <Link href={`/assets/${c.id}`} className="row-item link" key={c.id}>
+            <Link href={`/assets/view?id=${c.id}`} className="row-item link" key={c.id}>
               <div className="h"><span className="t">{c.name}</span>{canSeeFinancials && <span className="tnum">{inr(c.value)}</span>}</div>
               <div className="meta">{assetClassLabel(c.assetClass)}</div>
             </Link>
