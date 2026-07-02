@@ -39,10 +39,32 @@ export default function Profile() {
   // password
   const [cur, setCur] = useState(""); const [nw, setNw] = useState(""); const [pwMsg, setPwMsg] = useState<string | null>(null); const [pwErr, setPwErr] = useState<string | null>(null); const [pwBusy, setPwBusy] = useState(false);
 
+  // household name (owner)
+  const [hhName, setHhName] = useState(""); const [hhMsg, setHhMsg] = useState<string | null>(null); const [hhErr, setHhErr] = useState<string | null>(null); const [hhBusy, setHhBusy] = useState(false);
+
   useEffect(() => {
     if (!ready) return;
     api.me().then((u) => { setMe(u); setFullName(u.fullName ?? ""); setAvatar(u.avatar ?? null); }).catch(() => setMe(getUser()));
   }, [ready]);
+
+  useEffect(() => {
+    if (!ready || !user || user.role !== "owner") return;
+    api.getHousehold(user.householdId).then((h) => setHhName(h.displayName)).catch(() => {});
+  }, [ready, user]);
+
+  async function saveHousehold(e: React.FormEvent) {
+    e.preventDefault();
+    if (!user) return;
+    setHhBusy(true); setHhErr(null); setHhMsg(null);
+    try {
+      await api.updateHousehold(user.householdId, { displayName: hhName.trim() });
+      // Refresh the session so the top-bar label and the household switcher update.
+      const refreshed = await api.me();
+      setMe(refreshed); setStoredUser(refreshed);
+      setHhMsg("Saved ✓");
+    } catch (e: any) { setHhErr(e.message ?? "Could not save"); }
+    finally { setHhBusy(false); }
+  }
 
   async function persist(patch: { fullName?: string; avatar?: string | null }) {
     setErr(null); setSavedMsg(null);
@@ -102,6 +124,22 @@ export default function Profile() {
           {savedMsg && <span style={{ color: "var(--good)", fontSize: 12.5 }}>{savedMsg}</span>}
         </div>
       </div>
+
+      {me.role === "owner" && (
+        <form className="panel" onSubmit={saveHousehold}>
+          <h3>Household</h3>
+          <div className="field">
+            <label>Household name</label>
+            <input value={hhName} onChange={(e) => { setHhName(e.target.value); setHhMsg(null); }} placeholder="e.g. The Kunam family" />
+            <div className="hint">This is the name shown in the top bar and the household switcher.</div>
+          </div>
+          {hhErr && <div className="err">{hhErr}</div>}
+          <div className="actions">
+            <button className="btn primary small" type="submit" disabled={hhBusy || !hhName.trim()}>{hhBusy ? "…" : "Save household"}</button>
+            {hhMsg && <span style={{ color: "var(--good)", fontSize: 12.5 }}>{hhMsg}</span>}
+          </div>
+        </form>
+      )}
 
       <form className="panel" onSubmit={changePassword}>
         <h3>Change password</h3>

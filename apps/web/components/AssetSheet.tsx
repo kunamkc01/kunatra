@@ -1,8 +1,30 @@
 "use client";
-import { useEffect, useState } from "react";
-import { api, type Asset, type AssetClass, type Valuation, type Contribution, type Member } from "@/lib/api";
+import { useEffect, useRef, useState } from "react";
+import { api, type Asset, type AssetClass, type Valuation, type Contribution, type AssetPhoto, type Member } from "@/lib/api";
 import { inr } from "@/lib/format";
 import { Sheet } from "./Sheet";
+
+/** Downscale a chosen image to a reasonable max edge and return a JPEG data URL. */
+function fileToPhoto(file: File, maxEdge = 1280): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
+        const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+        const c = document.createElement("canvas");
+        c.width = w; c.height = h;
+        c.getContext("2d")!.drawImage(img, 0, 0, w, h);
+        resolve(c.toDataURL("image/jpeg", 0.82));
+      };
+      img.onerror = reject;
+      img.src = reader.result as string;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
 
 const CLASSES: { value: AssetClass; label: string; liquidDefault: boolean }[] = [
   { value: "real_estate", label: "Property / real estate", liquidDefault: false },
@@ -307,9 +329,56 @@ export function AssetSheet({
         </div>
       </form>
 
+      {existing && <PhotoGallery assetId={existing.id} />}
       {existing && <ValueHistory assetId={existing.id} onChanged={() => { onChanged?.(); }} />}
       {existing && <ContributionLedger assetId={existing.id} onChanged={() => { onChanged?.(); }} />}
+      {!existing && <p className="hint" style={{ marginTop: 14 }}>Save the asset first, then re-open it to add photos, value history and a money-in/out ledger.</p>}
     </Sheet>
+  );
+}
+
+// ---- photos — edit mode ---------------------------------------------------
+function PhotoGallery({ assetId }: { assetId: string }) {
+  const [photos, setPhotos] = useState<AssetPhoto[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const load = () => api.listAssetPhotos(assetId).then(setPhotos).catch(() => {});
+  useEffect(() => { load(); }, [assetId]);
+
+  async function onPick(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+    setBusy(true); setErr(null);
+    try {
+      for (const f of files) {
+        const dataUrl = await fileToPhoto(f);
+        await api.addAssetPhoto(assetId, { dataUrl });
+      }
+      load();
+    } catch (e: any) { setErr(e.message ?? "Could not upload"); }
+    finally { setBusy(false); if (fileRef.current) fileRef.current.value = ""; }
+  }
+  async function remove(id: string) { await api.deleteAssetPhoto(id); load(); }
+
+  return (
+    <div style={{ marginTop: 18, borderTop: "1px solid var(--line)", paddingTop: 14 }}>
+      <div className="story-sec">Photos</div>
+      <div className="photo-grid">
+        {photos.map((p) => (
+          <div key={p.id} className="photo-cell">
+            <img src={p.dataUrl} alt={p.caption ?? ""} />
+            <button className="photo-del" type="button" title="Remove" onClick={() => remove(p.id)}>✕</button>
+          </div>
+        ))}
+        <button type="button" className="photo-add" onClick={() => fileRef.current?.click()} disabled={busy}>
+          {busy ? "Uploading…" : "+ Add photo"}
+        </button>
+      </div>
+      <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={onPick} />
+      {err && <div className="err" style={{ marginTop: 6 }}>{err}</div>}
+      {photos.length === 0 && !busy && <div className="hint" style={{ marginTop: 6 }}>Add pictures of the property, documents or receipts. Images are shrunk before upload.</div>}
+    </div>
   );
 }
 

@@ -100,6 +100,16 @@ tbody tr:last-child td { border-bottom: 0; }
 .p-muted { background: var(--tint); color: var(--muted); }
 .p-info { background: var(--tint); color: var(--slate); }
 
+/* asset photo gallery */
+.photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 8px; }
+.photo-cell { position: relative; aspect-ratio: 1; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); }
+.photo-cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.photo-del { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 999px; border: 0; cursor: pointer; background: rgba(22,36,63,0.62); color: #fff; font-size: 12px; line-height: 1; display: flex; align-items: center; justify-content: center; }
+.photo-del:hover { background: rgba(22,36,63,0.85); }
+.photo-add { aspect-ratio: 1; border: 1px dashed var(--line); border-radius: 10px; background: var(--tint); color: var(--slate); cursor: pointer; font: inherit; font-size: 12.5px; }
+.photo-add:hover { background: var(--surface); }
+.photo-add:disabled { opacity: 0.6; cursor: default; }
+
 /* Alert strips */
 .strip { margin-top: 18px; border-radius: var(--radius); padding: 12px 15px; font-size: 13.5px; display: flex; align-items: center; gap: 10px; }
 .strip svg { width: 18px; height: 18px; flex: none; }

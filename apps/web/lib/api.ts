@@ -23,6 +23,14 @@ export interface Contribution {
   note: string | null;
 }
 
+export interface AssetPhoto {
+  id: string;
+  assetId: string;
+  dataUrl: string;
+  caption: string | null;
+  createdAt?: string;
+}
+
 export interface RealEstate {
   address?: string | null;
   sqft?: number | null;
@@ -305,6 +313,12 @@ export const api = {
   addValuation: (assetId: string, b: { value: number; asOf: string; source?: string }) =>
     req<Valuation>(`/api/assets/${assetId}/valuations`, { method: "POST", body: JSON.stringify(b) }),
   deleteValuation: (valuationId: string) => req<void>(`/api/valuations/${valuationId}`, { method: "DELETE" }),
+
+  // asset photos
+  listAssetPhotos: (assetId: string) => req<AssetPhoto[]>(`/api/assets/${assetId}/photos`),
+  addAssetPhoto: (assetId: string, b: { dataUrl: string; caption?: string }) =>
+    req<AssetPhoto>(`/api/assets/${assetId}/photos`, { method: "POST", body: JSON.stringify(b) }),
+  deleteAssetPhoto: (photoId: string) => req<void>(`/api/photos/${photoId}`, { method: "DELETE" }),
 
   // contributions ledger (drives XIRR)
   listContributions: (assetId: string) => req<Contribution[]>(`/api/assets/${assetId}/contributions`),
