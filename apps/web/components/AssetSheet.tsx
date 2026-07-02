@@ -338,7 +338,7 @@ export function AssetSheet({
 }
 
 // ---- photos — edit mode ---------------------------------------------------
-function PhotoGallery({ assetId }: { assetId: string }) {
+export function PhotoGallery({ assetId }: { assetId: string }) {
   const [photos, setPhotos] = useState<AssetPhoto[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -383,7 +383,7 @@ function PhotoGallery({ assetId }: { assetId: string }) {
 }
 
 // ---- Value history (dated valuations) — edit mode --------------------------
-function ValueHistory({ assetId, onChanged }: { assetId: string; onChanged: () => void }) {
+export function ValueHistory({ assetId, onChanged }: { assetId: string; onChanged: () => void }) {
   const [valuations, setValuations] = useState<Valuation[]>([]);
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState("");
@@ -420,7 +420,7 @@ function ValueHistory({ assetId, onChanged }: { assetId: string; onChanged: () =
 }
 
 // ---- Contribution ledger (drives XIRR) — edit mode ------------------------
-function ContributionLedger({ assetId, onChanged }: { assetId: string; onChanged: () => void }) {
+export function ContributionLedger({ assetId, onChanged }: { assetId: string; onChanged: () => void }) {
   const [contribs, setContribs] = useState<Contribution[]>([]);
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState("");

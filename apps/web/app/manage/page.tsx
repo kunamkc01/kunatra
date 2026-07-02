@@ -92,7 +92,7 @@ export default function Assets() {
       <tr key={a.id} style={nested ? { background: "var(--tint)" } : undefined}>
         <td style={{ paddingLeft: nested ? 26 : 8 }}>
           {nested && <span className="muted">↳ </span>}
-          <span style={{ fontWeight: 500 }}>{a.name}</span>
+          <Link href={`/assets/${a.id}`} className="asset-link" style={{ fontWeight: 500 }}>{a.name}</Link>
           <div style={{ fontSize: 11, color: "var(--muted)" }}>{assetClassLabel(a.assetClass)}{a.acquiredHow && a.acquiredYear ? ` · ${a.acquiredHow} ${a.acquiredYear}` : ""}{a.liquid ? " · liquid" : ""}{a.memberId ? ` · ${memberName(a.memberId) ?? "member"}` : ""}{a.realEstate?.address ? ` · ${a.realEstate.address}` : ""}</div>
         </td>
         <td className="tnum">{inr(a.value)}</td>

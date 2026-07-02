@@ -75,6 +75,30 @@ export interface Asset {
   realEstate: RealEstate | null;
 }
 
+export interface AssetMetrics {
+  currentValue: number;
+  costBasis: number | null;
+  unrealizedGain: number;
+  gainPct: number | null;
+  xirrPct: number | null;
+  monthlyContribution: number;
+  netRentMonthly: number;
+  dscr: number | null;
+  emiToIncomePct: number | null;
+  securedOutstanding: number;
+  equity: number;
+  ltvPct: number | null;
+  appreciationCagrPct: number | null;
+  acquiredYear: number | null;
+}
+
+export interface AssetDetail {
+  ownerName: string | null;
+  metrics: AssetMetrics;
+  securedLoans: { id: string; name: string; outstanding: number; emiMonthly: number; ratePct: number | null }[];
+  children: { id: string; name: string; assetClass: AssetClass; value: number }[];
+}
+
 export type ComplianceKind = "property_tax" | "insurance" | "amc" | "inspection" | "renewal" | "other";
 export type Recurrence = "none" | "monthly" | "quarterly" | "yearly";
 
@@ -304,6 +328,8 @@ export const api = {
   listAssets: (id: string) => req<Asset[]>(`/api/households/${id}/assets`),
   createAsset: (id: string, b: Partial<Asset>) =>
     req<Asset>(`/api/households/${id}/assets`, { method: "POST", body: JSON.stringify(b) }),
+  getAsset: (assetId: string) => req<Asset>(`/api/assets/${assetId}`),
+  assetDetail: (assetId: string) => req<AssetDetail>(`/api/assets/${assetId}/detail`),
   updateAsset: (assetId: string, b: Partial<Asset>) =>
     req<Asset>(`/api/assets/${assetId}`, { method: "PATCH", body: JSON.stringify(b) }),
   deleteAsset: (assetId: string) => req<void>(`/api/assets/${assetId}`, { method: "DELETE" }),
