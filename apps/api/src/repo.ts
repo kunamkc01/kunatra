@@ -184,7 +184,7 @@ const assetRow = (r: any) => ({
   rentTds: r.monthly_rent_tds_paise != null ? paiseToRupees(r.monthly_rent_tds_paise) : null,
   acquiredHow: r.acquired_how ?? null,
   acquiredYear: r.acquired_year ?? null,
-  realEstate: r.address != null || r.ptin != null || r.sqft != null
+  realEstate: r.address != null || r.ptin != null || r.sqft != null || r.city != null || r.property_type != null
     ? {
         address: r.address ?? null,
         sqft: r.sqft != null ? Number(r.sqft) : null,
@@ -192,12 +192,19 @@ const assetRow = (r: any) => ({
         ptin: r.ptin ?? null,
         carPark: r.car_park ?? null,
         carParkSize: r.car_park_size ?? null,
+        propertyType: r.property_type ?? null,
+        bedrooms: r.bedrooms != null ? Number(r.bedrooms) : null,
+        bathrooms: r.bathrooms != null ? Number(r.bathrooms) : null,
+        floor: r.floor != null ? Number(r.floor) : null,
+        builtYear: r.built_year != null ? Number(r.built_year) : null,
+        city: r.city ?? null,
+        locality: r.locality ?? null,
       }
     : null,
 });
 
 const ASSET_SELECT = `
-  SELECT a.*, p.address, p.sqft, p.undivided_share, p.ptin, p.car_park, p.car_park_size
+  SELECT a.*, p.address, p.sqft, p.undivided_share, p.ptin, p.car_park, p.car_park_size, p.property_type, p.bedrooms, p.bathrooms, p.floor, p.built_year, p.city, p.locality
     FROM assets a
     LEFT JOIN real_estate_profiles p ON p.asset_id = a.id`;
 
@@ -215,13 +222,21 @@ export async function getAsset(id: string) {
 
 async function upsertRealEstate(client: any, assetId: string, re: any) {
   await client.query(
-    `INSERT INTO real_estate_profiles (asset_id, address, sqft, undivided_share, ptin, car_park, car_park_size)
-     VALUES ($1,$2,$3,$4,$5,$6,$7)
+    `INSERT INTO real_estate_profiles (asset_id, address, sqft, undivided_share, ptin, car_park, car_park_size, property_type, bedrooms, bathrooms, floor, built_year, city, locality)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
      ON CONFLICT (asset_id) DO UPDATE SET
        address = EXCLUDED.address, sqft = EXCLUDED.sqft, undivided_share = EXCLUDED.undivided_share,
-       ptin = EXCLUDED.ptin, car_park = EXCLUDED.car_park, car_park_size = EXCLUDED.car_park_size`,
+       ptin = EXCLUDED.ptin, car_park = EXCLUDED.car_park, car_park_size = EXCLUDED.car_park_size,
+       property_type = EXCLUDED.property_type, bedrooms = EXCLUDED.bedrooms, bathrooms = EXCLUDED.bathrooms,
+       floor = EXCLUDED.floor, built_year = EXCLUDED.built_year, city = EXCLUDED.city, locality = EXCLUDED.locality`,
     [assetId, str(re.address, 'address'), re.sqft != null && re.sqft !== '' ? Number(re.sqft) : null,
-     str(re.undividedShare, 'undividedShare'), str(re.ptin, 'ptin'), str(re.carPark, 'carPark'), str(re.carParkSize, 'carParkSize')]
+     str(re.undividedShare, 'undividedShare'), str(re.ptin, 'ptin'), str(re.carPark, 'carPark'), str(re.carParkSize, 'carParkSize'),
+     str(re.propertyType, 'propertyType') ?? null,
+     re.bedrooms != null && re.bedrooms !== '' ? Number(re.bedrooms) : null,
+     re.bathrooms != null && re.bathrooms !== '' ? Number(re.bathrooms) : null,
+     re.floor != null && re.floor !== '' ? Number(re.floor) : null,
+     re.builtYear != null && re.builtYear !== '' ? Number(re.builtYear) : null,
+     str(re.city, 'city') ?? null, str(re.locality, 'locality') ?? null]
   );
 }
 

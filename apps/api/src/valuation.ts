@@ -1,0 +1,263 @@
+// AI property-valuation MVP. An informational ESTIMATE that lives beside the
+// user's own value — it never writes to the asset. Provider-abstracted (Bedrock
+// Converse API; the model is one env var). Prompts carry property
+// characteristics ONLY — never owner names, contacts or household financials.
+import { BedrockRuntimeClient, ConverseCommand } from '@aws-sdk/client-bedrock-runtime';
+import { db, rupeesToPaise, paiseToRupees, HttpError } from './pool.ts';
+
+export const PROMPT_VERSION = 'v1';
+const REGION = process.env.NOTIFY_REGION ?? process.env.AWS_REGION ?? 'us-east-1';
+const MODEL_ID = process.env.BEDROCK_MODEL_ID ?? 'us.anthropic.claude-haiku-4-5-20251001-v1:0';
+const REFRESH_DAYS = 90;          // scheduled refresh
+const MIN_REFRESH_HOURS = 20;     // user/edit-triggered refresh at most ~once a day
+
+const creds = process.env.NOTIFY_ACCESS_KEY_ID && process.env.NOTIFY_SECRET_ACCESS_KEY
+  ? { accessKeyId: process.env.NOTIFY_ACCESS_KEY_ID, secretAccessKey: process.env.NOTIFY_SECRET_ACCESS_KEY }
+  : undefined;
+const bedrock = creds ? new BedrockRuntimeClient({ region: REGION, credentials: creds }) : null;
+
+// ---- provider abstraction ---------------------------------------------------
+
+/** Property characteristics only — the whole surface we expose to the AI. */
+export interface ValuationInput {
+  city: string | null; locality: string | null; address: string | null;
+  propertyType: string | null; sqft: number | null;
+  bedrooms: number | null; bathrooms: number | null; floor: number | null; builtYear: number | null;
+  purchasePrice: number | null; purchaseYear: number | null; monthlyRent: number | null;
+}
+
+/** A provider returns the model's raw text for our prompt (we parse/validate). */
+export type ValuationProvider = (input: ValuationInput, modelId: string) => Promise<string>;
+
+function buildPrompt(i: ValuationInput): string {
+  const known = Object.entries({
+    city: i.city, locality: i.locality, address: i.address, property_type: i.propertyType,
+    built_up_area_sqft: i.sqft, bedrooms: i.bedrooms, bathrooms: i.bathrooms, floor: i.floor,
+    built_year: i.builtYear, purchase_price_inr: i.purchasePrice, purchase_year: i.purchaseYear,
+    current_monthly_rent_inr: i.monthlyRent,
+  }).filter(([, v]) => v != null && v !== '');
+  return [
+    'You are a conservative Indian residential real-estate analyst. Estimate the current market value of this property.',
+    'Prefer under-promising: when unsure, widen the range and lower the confidence. All money in INR (rupees, plain integers).',
+    '',
+    'Property:',
+    ...known.map(([k, v]) => `  ${k}: ${v}`),
+    '',
+    'Respond with STRICT JSON only (no markdown, no prose) in exactly this shape:',
+    '{"estimatedValue":int,"lowValue":int,"highValue":int,"pricePerSqft":int,"estimatedMonthlyRent":int,',
+    ' "rentalYieldPct":number,"annualGrowthPct":number,"confidence":"low"|"medium"|"high",',
+    ' "summary":"one short sentence","reasons":["...", "..."]}',
+  ].join('\n');
+}
+
+const bedrockProvider: ValuationProvider = async (input, modelId) => {
+  if (!bedrock) throw new Error('bedrock_not_configured');
+  const res = await bedrock.send(new ConverseCommand({
+    modelId,
+    messages: [{ role: 'user', content: [{ text: buildPrompt(input) }] }],
+    inferenceConfig: { maxTokens: 900, temperature: 0.2 },
+  }));
+  const text = res.output?.message?.content?.map((c: any) => c.text ?? '').join('') ?? '';
+  if (!text) throw new Error('empty_response');
+  return text;
+};
+
+let provider: ValuationProvider = bedrockProvider;
+/** Test seam — swap the model call for a fake. */
+export function _setProviderForTests(p: ValuationProvider | null) { provider = p ?? bedrockProvider; }
+
+// ---- parsing + sanity validation -------------------------------------------
+
+interface Estimate {
+  estimatedValue: number; lowValue: number; highValue: number;
+  pricePerSqft: number | null; estimatedMonthlyRent: number | null;
+  rentalYieldPct: number | null; annualGrowthPct: number | null;
+  confidence: 'low' | 'medium' | 'high'; summary: string; reasons: string[];
+}
+
+/** Parse the model text and sanity-check it. Returns null when it can't be trusted. */
+export function parseEstimate(text: string, sqft: number | null): Estimate | null {
+  // tolerate accidental markdown fences
+  const m = text.match(/\{[\s\S]*\}/);
+  if (!m) return null;
+  let j: any;
+  try { j = JSON.parse(m[0]); } catch { return null; }
+
+  const num = (v: any) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  const est = num(j.estimatedValue), low = num(j.lowValue), high = num(j.highValue);
+  if (est == null || low == null || high == null) return null;
+  if (est <= 0 || low <= 0 || high <= 0 || low > est || est > high) return null;
+
+  let ppsf = num(j.pricePerSqft);
+  // Coarse India-wide plausibility band for ₹/sqft; cross-check against value/area.
+  if (ppsf != null && (ppsf < 500 || ppsf > 200000)) return null;
+  if (sqft && sqft > 0) {
+    const implied = est / sqft;
+    if (implied < 300 || implied > 300000) return null;
+    if (ppsf == null) ppsf = Math.round(implied);
+  }
+
+  const rent = num(j.estimatedMonthlyRent);
+  if (rent != null && (rent < 0 || rent > est)) return null;
+  const yieldPct = num(j.rentalYieldPct);
+  if (yieldPct != null && (yieldPct < 0 || yieldPct > 25)) return null;
+  const growth = num(j.annualGrowthPct);
+  if (growth != null && (growth < -15 || growth > 40)) return null;
+
+  const confidence = ['low', 'medium', 'high'].includes(j.confidence) ? j.confidence : 'low';
+  const summary = typeof j.summary === 'string' ? j.summary.slice(0, 500) : '';
+  const reasons = Array.isArray(j.reasons) ? j.reasons.filter((r: any) => typeof r === 'string').slice(0, 6) : [];
+
+  return { estimatedValue: est, lowValue: low, highValue: high, pricePerSqft: ppsf, estimatedMonthlyRent: rent, rentalYieldPct: yieldPct, annualGrowthPct: growth, confidence, summary, reasons };
+}
+
+// ---- the worker --------------------------------------------------------------
+
+async function loadInput(assetId: string): Promise<{ householdId: string; input: ValuationInput } | null> {
+  const { rows } = await db().query(
+    `SELECT a.household_id, a.asset_class, a.cost_basis_paise, a.acquired_year, a.monthly_rent_paise,
+            p.address, p.sqft, p.property_type, p.bedrooms, p.bathrooms, p.floor, p.built_year, p.city, p.locality
+       FROM assets a LEFT JOIN real_estate_profiles p ON p.asset_id = a.id
+      WHERE a.id = $1`, [assetId]);
+  const r = rows[0];
+  if (!r || r.asset_class !== 'real_estate') return null;
+  return {
+    householdId: r.household_id,
+    input: {
+      city: r.city ?? null, locality: r.locality ?? null, address: r.address ?? null,
+      propertyType: r.property_type ?? null, sqft: r.sqft != null ? Number(r.sqft) : null,
+      bedrooms: r.bedrooms ?? null, bathrooms: r.bathrooms ?? null, floor: r.floor ?? null, builtYear: r.built_year ?? null,
+      purchasePrice: r.cost_basis_paise != null ? paiseToRupees(r.cost_basis_paise) : null,
+      purchaseYear: r.acquired_year ?? null,
+      monthlyRent: r.monthly_rent_paise != null ? paiseToRupees(r.monthly_rent_paise) : null,
+    },
+  };
+}
+
+async function processValuation(assetId: string): Promise<void> {
+  try {
+    const loaded = await loadInput(assetId);
+    if (!loaded) return;
+    let est: Estimate | null = null;
+    for (let attempt = 0; attempt < 2 && !est; attempt++) {   // retry once
+      try { est = parseEstimate(await provider(loaded.input, MODEL_ID), loaded.input.sqft); }
+      catch (e: any) { console.error(`[valuation] ${assetId} attempt ${attempt + 1}: ${e?.name ?? e?.message}`); }
+    }
+    if (!est) {
+      await db().query(`UPDATE property_valuations SET status = 'unavailable', updated_at = now() WHERE asset_id = $1`, [assetId]);
+      return;
+    }
+    await db().query(
+      `UPDATE property_valuations SET
+         status = 'ok', estimated_value_paise = $2, low_paise = $3, high_paise = $4,
+         price_per_sqft_paise = $5, estimated_rent_paise = $6, rental_yield_pct = $7,
+         annual_growth_pct = $8, confidence = $9, summary = $10, reasons = $11,
+         provider = $12, prompt_version = $13, generated_at = now(), updated_at = now()
+       WHERE asset_id = $1`,
+      [assetId, rupeesToPaise(est.estimatedValue), rupeesToPaise(est.lowValue), rupeesToPaise(est.highValue),
+       est.pricePerSqft != null ? rupeesToPaise(est.pricePerSqft) : null,
+       est.estimatedMonthlyRent != null ? rupeesToPaise(est.estimatedMonthlyRent) : null,
+       est.rentalYieldPct, est.annualGrowthPct, est.confidence, est.summary, JSON.stringify(est.reasons),
+       MODEL_ID, PROMPT_VERSION]
+    );
+  } catch (e: any) {
+    console.error(`[valuation] ${assetId} failed: ${e?.message}`);
+    await db().query(`UPDATE property_valuations SET status = 'unavailable', updated_at = now() WHERE asset_id = $1`, [assetId]).catch(() => {});
+  }
+}
+
+/** Queue an estimate for a property (no-op for non-real-estate). Fire-and-forget. */
+export async function requestValuation(assetId: string): Promise<boolean> {
+  const loaded = await loadInput(assetId);
+  if (!loaded) return false;
+  await db().query(
+    `INSERT INTO property_valuations (asset_id, household_id, status)
+     VALUES ($1, $2, 'pending')
+     ON CONFLICT (asset_id) DO UPDATE SET status = 'pending', updated_at = now()`,
+    [assetId, loaded.householdId]
+  );
+  void processValuation(assetId);
+  return true;
+}
+
+/** Re-request only if the current estimate is stale enough (edit-triggered). */
+export async function requestIfStale(assetId: string): Promise<void> {
+  const { rows } = await db().query(
+    `SELECT status, generated_at FROM property_valuations WHERE asset_id = $1`, [assetId]);
+  const r = rows[0];
+  if (r && r.status === 'pending') return;
+  if (r && r.generated_at && Date.now() - new Date(r.generated_at).getTime() < MIN_REFRESH_HOURS * 3600_000) return;
+  await requestValuation(assetId);
+}
+
+const valuationRow = (r: any) => ({
+  assetId: r.asset_id,
+  status: r.status,
+  estimatedValue: r.estimated_value_paise != null ? paiseToRupees(r.estimated_value_paise) : null,
+  lowValue: r.low_paise != null ? paiseToRupees(r.low_paise) : null,
+  highValue: r.high_paise != null ? paiseToRupees(r.high_paise) : null,
+  pricePerSqft: r.price_per_sqft_paise != null ? paiseToRupees(r.price_per_sqft_paise) : null,
+  estimatedRent: r.estimated_rent_paise != null ? paiseToRupees(r.estimated_rent_paise) : null,
+  rentalYieldPct: r.rental_yield_pct != null ? Number(r.rental_yield_pct) : null,
+  annualGrowthPct: r.annual_growth_pct != null ? Number(r.annual_growth_pct) : null,
+  confidence: r.confidence ?? null,
+  summary: r.summary ?? null,
+  reasons: r.reasons ?? [],
+  provider: r.provider ?? null,
+  feedback: r.feedback ?? null,
+  userValue: r.user_value_paise != null ? paiseToRupees(r.user_value_paise) : null,
+  generatedAt: r.generated_at ?? null,
+});
+
+export async function getValuation(assetId: string) {
+  const { rows } = await db().query(`SELECT * FROM property_valuations WHERE asset_id = $1`, [assetId]);
+  return rows[0] ? valuationRow(rows[0]) : null;
+}
+
+/** User-requested refresh — at most ~once a day per property. */
+export async function refreshValuation(assetId: string) {
+  const { rows } = await db().query(`SELECT status, generated_at FROM property_valuations WHERE asset_id = $1`, [assetId]);
+  const r = rows[0];
+  if (r?.status === 'pending') return getValuation(assetId); // already running
+  if (r?.generated_at && Date.now() - new Date(r.generated_at).getTime() < MIN_REFRESH_HOURS * 3600_000) {
+    throw new HttpError(429, 'too_soon', 'This estimate was refreshed recently — try again tomorrow');
+  }
+  const ok = await requestValuation(assetId);
+  if (!ok) throw new HttpError(400, 'not_a_property', 'Estimates are only available for real-estate assets');
+  return getValuation(assetId);
+}
+
+export async function saveFeedback(assetId: string, body: any) {
+  const fb = ['too_low', 'accurate', 'too_high'].includes(body.feedback) ? body.feedback : null;
+  if (!fb) throw new HttpError(400, 'invalid_input', 'feedback must be too_low | accurate | too_high');
+  const userValue = body.userValue != null && body.userValue !== '' ? Number(body.userValue) : null;
+  if (userValue != null && (!Number.isFinite(userValue) || userValue <= 0)) {
+    throw new HttpError(400, 'invalid_input', 'userValue must be a positive number');
+  }
+  const { rows } = await db().query(
+    `UPDATE property_valuations SET feedback = $2, user_value_paise = $3, updated_at = now()
+      WHERE asset_id = $1 RETURNING *`,
+    [assetId, fb, userValue != null ? rupeesToPaise(userValue) : null]
+  );
+  if (rows.length === 0) throw new HttpError(404, 'valuation_not_found');
+  return valuationRow(rows[0]);
+}
+
+/**
+ * Daily sweep: refresh estimates older than 90 days, and rescue 'pending' rows
+ * stuck for over an hour (e.g. the process restarted mid-call).
+ */
+export async function sweepValuations(): Promise<void> {
+  if (!process.env.DATABASE_URL) return;
+  try {
+    const { rows } = await db().query(
+      `SELECT asset_id FROM property_valuations
+        WHERE (status = 'ok' AND generated_at < now() - interval '${REFRESH_DAYS} days')
+           OR (status = 'pending' AND updated_at < now() - interval '1 hour')
+        LIMIT 25`);
+    for (const r of rows) await requestValuation(r.asset_id);
+    if (rows.length) console.log(`[valuation] refreshed ${rows.length} stale estimate(s)`);
+  } catch (e: any) {
+    console.error(`[valuation] sweep failed: ${e?.message}`);
+  }
+}

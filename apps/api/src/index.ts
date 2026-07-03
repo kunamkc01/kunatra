@@ -6,6 +6,7 @@ import { HttpError } from './pool.ts';
 import * as repo from './repo.ts';
 import * as ops from './ops.ts';
 import * as rent from './rent.ts';
+import * as valuation from './valuation.ts';
 import * as auth from './auth.ts';
 import * as compliance from './compliance.ts';
 import * as approvals from './approvals.ts';
@@ -94,10 +95,25 @@ app.get('/api/households/:id/assessment', sameHousehold, financialView, h(async 
 
 // ---- assets (member logins are scoped to their own person) ---------------
 app.get('/api/households/:id/assets', sameHousehold, h(async (req, res) => res.json(await repo.listAssets(req.params.id))));
-app.post('/api/households/:id/assets', sameHousehold, editAssets, forceMemberOwnership, h(async (req, res) => res.status(201).json(await repo.createAsset(req.params.id, req.body))));
+app.post('/api/households/:id/assets', sameHousehold, editAssets, forceMemberOwnership, h(async (req, res) => {
+  const created = await repo.createAsset(req.params.id, req.body);
+  if (created.assetClass === 'real_estate') void valuation.requestValuation(created.id); // background estimate
+  res.status(201).json(created);
+}));
 app.get('/api/assets/:id', scopeResource('assets'), h(async (req, res) => res.json(await repo.getAsset(req.params.id))));
 app.get('/api/assets/:id/detail', scopeResource('assets'), h(async (req, res) => res.json(await assetDetail(req.params.id, new Date()))));
-app.patch('/api/assets/:id', editAssets, scopeOwned('assets'), h(async (req, res) => res.json(await repo.updateAsset(req.params.id, req.body))));
+app.patch('/api/assets/:id', editAssets, scopeOwned('assets'), h(async (req, res) => {
+  const updated = await repo.updateAsset(req.params.id, req.body);
+  if (updated.assetClass === 'real_estate' && ('realEstate' in req.body || 'monthlyRent' in req.body)) {
+    void valuation.requestIfStale(updated.id);
+  }
+  res.json(updated);
+}));
+
+// ---- AI property-valuation (estimate lives beside the user's value) -------
+app.get('/api/assets/:id/valuation', scopeResource('assets'), h(async (req, res) => res.json(await valuation.getValuation(req.params.id))));
+app.post('/api/assets/:id/valuation/refresh', editAssets, scopeOwned('assets'), h(async (req, res) => res.json(await valuation.refreshValuation(req.params.id))));
+app.post('/api/assets/:id/valuation/feedback', editAssets, scopeOwned('assets'), h(async (req, res) => res.json(await valuation.saveFeedback(req.params.id, req.body))));
 app.delete('/api/assets/:id', requireRole('owner', 'manager', 'member'), scopeOwned('assets'), h(async (req, res) => { await repo.deleteAsset(req.params.id); res.sendStatus(204); }));
 
 // ---- valuations & contributions (owner/manager/operations keep them fresh) ----
@@ -205,7 +221,7 @@ if (isMain) {
   app.listen(port, () => console.log(`Kunatra API on :${port}`));
   // Compliance reminders: sweep on startup, then twice a day (the reminded_on
   // guard keeps it to one notification per item per day).
-  const dailySweeps = () => { remindDueCompliance(); rent.generateRentDue(); ops.sweepFixedWorkOrders(); };
+  const dailySweeps = () => { remindDueCompliance(); rent.generateRentDue(); ops.sweepFixedWorkOrders(); valuation.sweepValuations(); };
   dailySweeps();
   setInterval(dailySweeps, 12 * 60 * 60 * 1000).unref();
 }

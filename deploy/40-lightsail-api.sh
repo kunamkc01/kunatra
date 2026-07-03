@@ -31,7 +31,8 @@ cat > "$TMP/containers.json" <<JSON
       "NOTIFY_REGION": "${AWS_REGION}",
       "NOTIFY_ACCESS_KEY_ID": "${NOTIFY_ACCESS_KEY_ID:-}",
       "NOTIFY_SECRET_ACCESS_KEY": "${NOTIFY_SECRET_ACCESS_KEY:-}",
-      "ADMIN_EMAILS": "${ADMIN_EMAILS:-}"
+      "ADMIN_EMAILS": "${ADMIN_EMAILS:-}",
+      "BEDROCK_MODEL_ID": "${BEDROCK_MODEL_ID:-us.anthropic.claude-haiku-4-5-20251001-v1:0}"
     }
   }
 }
