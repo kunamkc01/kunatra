@@ -198,7 +198,8 @@ export default function Assets() {
           ))}
 
           {/* Cash flow */}
-          <CashflowPanel household={household} onSaved={refresh} readOnly={!canManageMoney} membersDriveIncome={hasMembersIncome} />
+          <CashflowPanel household={household} onSaved={refresh} readOnly={!canManageMoney}
+            totals={{ salary: salaryNet, rent: netRent, personal: members.reduce((s, m) => s + (m.monthlyExpenses ?? 0), 0) }} />
         </>
       )}
 
@@ -225,48 +226,56 @@ export default function Assets() {
   );
 }
 
-function CashflowPanel({ household, onSaved, readOnly = false, membersDriveIncome = false }: { household: Household | null; onSaved: () => void; readOnly?: boolean; membersDriveIncome?: boolean }) {
-  const [takeHome, setTakeHome] = useState("");
+function CashflowPanel({ household, onSaved, readOnly = false, totals }: {
+  household: Household | null; onSaved: () => void; readOnly?: boolean;
+  totals: { salary: number; rent: number; personal: number };
+}) {
   const [essential, setEssential] = useState("");
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    setTakeHome(household?.monthlyTakeHome != null ? String(household.monthlyTakeHome) : "");
     setEssential(household?.monthlyEssential != null ? String(household.monthlyEssential) : "");
   }, [household]);
 
   if (!household) return null;
 
+  const shared = essential ? Number(essential) : 0;
+  const spending = shared + totals.personal;
+  const income = totals.salary + totals.rent;
+
   async function save(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true); setSaved(false);
     try {
-      await api.updateHousehold(household!.id, {
-        monthlyEssential: essential ? Number(essential) : null,
-        ...(membersDriveIncome ? {} : { monthlyTakeHome: takeHome ? Number(takeHome) : null }),
-      });
+      await api.updateHousehold(household!.id, { monthlyEssential: essential ? Number(essential) : null });
       setSaved(true); onSaved();
     } finally { setBusy(false); }
   }
 
   return (
     <form className="panel" onSubmit={save} style={{ marginTop: 18 }}>
-      <h3>Monthly spending</h3>
+      <h3>Monthly cash flow</h3>
       <p className="desc">
-        {membersDriveIncome
-          ? "Income comes from your members (salary) and let properties (rent). Set the SHARED household essentials here — each member's personal expenses (set on the member) add on top."
-          : "Your take-home and essentials — drives EMI-strain, runway and surplus. Add family members to split salary out per person."}
+        Every person carries their own salary and spending (set on the member). The household holds only the
+        shared bills — rent, groceries, utilities. Kunatra adds it all up.
       </p>
       <div className="row2">
-        {!membersDriveIncome && (
-          <div className="field"><label>Take-home (₹)</label><input inputMode="numeric" value={takeHome} disabled={readOnly} onChange={(e) => { setTakeHome(e.target.value); setSaved(false); }} placeholder="140000" /></div>
-        )}
-        <div className="field"><label>Shared essentials (₹/mo)</label><input inputMode="numeric" value={essential} disabled={readOnly} onChange={(e) => { setEssential(e.target.value); setSaved(false); }} placeholder="50000" /></div>
+        <div className="field">
+          <label>Shared essentials (₹/mo)</label>
+          <input inputMode="numeric" value={essential} disabled={readOnly} onChange={(e) => { setEssential(e.target.value); setSaved(false); }} placeholder="rent, groceries, utilities…" />
+        </div>
+        <div className="field" style={{ display: "flex", alignItems: "flex-end" }}>
+          <div className="hint">
+            Total salary <b style={{ color: "var(--ink)" }}>{inr(totals.salary)}</b>/mo{totals.rent > 0 ? <> + rent <b style={{ color: "var(--ink)" }}>{inr(totals.rent)}</b></> : null} ·
+            spending <b style={{ color: "var(--ink)" }}>{inr(spending)}</b>/mo{totals.personal > 0 ? ` (${inr(shared)} shared + ${inr(totals.personal)} personal)` : ""}
+            {income > 0 ? <> · keeps <b style={{ color: income - spending >= 0 ? "var(--good)" : "var(--bad)" }}>{inr(income - spending)}</b> before EMIs</> : null}
+          </div>
+        </div>
       </div>
       {!readOnly && (
         <div className="actions">
-          <button className="btn primary small" type="submit" disabled={busy}>{busy ? "Saving…" : "Save cash flow"}</button>
+          <button className="btn primary small" type="submit" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
           {saved && <span style={{ color: "var(--good)", fontSize: 12.5 }}>Saved ✓</span>}
         </div>
       )}

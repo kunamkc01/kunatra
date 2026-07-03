@@ -78,9 +78,10 @@ export default function Login() {
                 <input value={householdName} onChange={(e) => setHouseholdName(e.target.value)} placeholder="e.g. Priya's finances" />
               </div>
               <div className="row2">
-                <div className="field"><label>Monthly take-home (₹)</label><input inputMode="numeric" value={takeHome} onChange={(e) => setTakeHome(e.target.value)} placeholder="140000" /></div>
-                <div className="field"><label>Monthly essentials (₹)</label><input inputMode="numeric" value={essential} onChange={(e) => setEssential(e.target.value)} placeholder="50000" /></div>
+                <div className="field"><label>Your monthly take-home (₹)</label><input inputMode="numeric" value={takeHome} onChange={(e) => setTakeHome(e.target.value)} placeholder="140000" /></div>
+                <div className="field"><label>Shared essentials (₹/mo)</label><input inputMode="numeric" value={essential} onChange={(e) => setEssential(e.target.value)} placeholder="rent, groceries…" /></div>
               </div>
+              <div className="hint" style={{ marginTop: -6 }}>Your salary goes on you — every family member carries their own salary and spending; the household holds the shared bills.</div>
             </>
           )}
           {err && <div className="err">{err}</div>}
