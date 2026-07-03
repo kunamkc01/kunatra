@@ -110,6 +110,32 @@ tbody tr:last-child td { border-bottom: 0; }
 .photo-add:hover { background: var(--surface); }
 .photo-add:disabled { opacity: 0.6; cursor: default; }
 
+/* setup checklist */
+.setup h3 { font-size: 16px; }
+.setup-hide { background: none; border: 0; cursor: pointer; color: var(--muted); font-size: 11.5px; margin-left: 10px; text-decoration: underline; }
+.setup-bar { height: 5px; background: var(--tint); border-radius: 999px; margin: 10px 0 6px; overflow: hidden; }
+.setup-bar > div { height: 100%; background: var(--good); border-radius: 999px; transition: width .3s ease; }
+.setup-items { display: flex; flex-direction: column; }
+.setup-item { display: flex; align-items: flex-start; gap: 10px; padding: 9px 6px; border-radius: 8px; text-decoration: none; color: inherit; border-bottom: 1px solid var(--line); }
+.setup-item:last-child { border-bottom: 0; }
+.setup-item:hover { background: var(--tint); }
+.setup-item.is-done { opacity: 0.55; }
+.setup-check { width: 20px; height: 20px; flex: none; display: grid; place-items: center; margin-top: 1px; }
+.setup-check svg { width: 16px; height: 16px; color: var(--good); }
+.setup-dot { width: 14px; height: 14px; border: 1.6px solid var(--muted); border-radius: 999px; display: block; }
+.setup-label { display: block; font-size: 13.5px; font-weight: 550; }
+.setup-item.is-done .setup-label { text-decoration: line-through; font-weight: 450; }
+.setup-hint { display: block; font-size: 12px; color: var(--muted); margin-top: 1px; }
+.setup-go { margin-left: auto; color: var(--muted); align-self: center; }
+
+/* first-asset starters */
+.starters { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin: 8px 0 4px; }
+.starter { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; cursor: pointer; font: inherit; text-align: left; transition: transform .08s, border-color .12s; }
+.starter:hover { border-color: var(--slate); transform: translateY(-1px); }
+.starter .ic { font-size: 20px; }
+.starter .t { font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.starter .s { font-size: 11.5px; color: var(--muted); }
+
 /* asset detail */
 .backlink { font-size: 12.5px; color: var(--slate); text-decoration: none; }
 .backlink:hover { color: var(--ink); text-decoration: underline; }

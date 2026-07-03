@@ -6,6 +6,7 @@ import { api, type Household, type Asset, type Loan, type OperationsSummary, typ
 import { useAuth } from "@/lib/useAuth";
 import { inr, assetClassLabel } from "@/lib/format";
 import { Shell } from "@/components/Shell";
+import { SetupChecklist } from "@/components/SetupChecklist";
 
 const ALLOC_COLORS = ["var(--navy)", "var(--accent)", "var(--good)", "var(--seal)", "var(--warn)", "var(--muted)", "var(--bad)"];
 const tileClass = (sev?: string) => (sev === "good" ? "g" : sev === "watch" ? "w" : sev === "warning" ? "b" : "");
@@ -94,7 +95,10 @@ export default function Portfolio() {
 
       {err && <div className="strip bad">{err}</div>}
 
-      {!err && !hasData && (
+      {/* The owner's guided path — shows until the mirror is built. */}
+      {!err && user && <SetupChecklist user={user} />}
+
+      {!err && !hasData && user?.role !== "owner" && (
         <div className="explain">
           Nothing here yet. <Link href="/manage" style={{ color: "var(--accent)", fontWeight: 600 }}>Add your assets and loans</Link> to see where you stand.
         </div>

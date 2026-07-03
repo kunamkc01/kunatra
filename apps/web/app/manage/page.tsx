@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { api, type Asset, type Loan, type Household, type Member } from "@/lib/api";
+import { api, type Asset, type AssetClass, type Loan, type Household, type Member } from "@/lib/api";
 import { useAuth } from "@/lib/useAuth";
 import { inr, assetClassLabel } from "@/lib/format";
 import { Shell } from "@/components/Shell";
@@ -23,7 +23,7 @@ export default function Assets() {
   const [members, setMembers] = useState<Member[]>([]);
   const [err, setErr] = useState<string | null>(null);
 
-  const [assetSheet, setAssetSheet] = useState<{ open: boolean; edit?: Asset | null }>({ open: false });
+  const [assetSheet, setAssetSheet] = useState<{ open: boolean; edit?: Asset | null; presetClass?: AssetClass; presetRented?: boolean }>({ open: false });
   const [loanSheet, setLoanSheet] = useState<{ open: boolean; edit?: Loan | null }>({ open: false });
   const [memberSheet, setMemberSheet] = useState<{ open: boolean; edit?: Member | null }>({ open: false });
 
@@ -139,7 +139,35 @@ export default function Assets() {
         <table>
           <thead><tr><th style={{ width: "34%" }}>Asset</th><th>Market value</th>{canSeeFinancials && <><th>Loan</th><th>Equity</th><th>LTV</th></>}<th></th></tr></thead>
           <tbody>
-            {topLevel.length === 0 && <tr><td colSpan={cols} className="empty">No assets yet — add your home, funds, savings…</td></tr>}
+            {topLevel.length === 0 && (
+              <tr><td colSpan={cols} style={{ padding: "18px 10px" }}>
+                {canEditAssets ? (
+                  <>
+                    <div style={{ fontWeight: 600, marginBottom: 2 }}>What do you own? Start with one:</div>
+                    <div className="starters">
+                      {([
+                        { ic: "🏠", t: "Home I live in", s: "house or flat", c: "real_estate" as AssetClass },
+                        { ic: "🏢", t: "Property I rent out", s: "earns rent", c: "real_estate" as AssetClass, rented: true },
+                        { ic: "📈", t: "Mutual funds / SIP", s: "recurring investing", c: "sip" as AssetClass },
+                        { ic: "🏦", t: "Fixed deposit", s: "FD / bonds", c: "fd" as AssetClass },
+                        { ic: "🪙", t: "Gold", s: "jewellery, coins, SGB", c: "gold" as AssetClass },
+                        { ic: "💵", t: "Cash & savings", s: "bank balances", c: "cash" as AssetClass },
+                      ]).map((x) => (
+                        <button key={x.t} type="button" className="starter"
+                          onClick={() => setAssetSheet({ open: true, edit: null, presetClass: x.c, presetRented: x.rented })}>
+                          <span className="ic">{x.ic}</span>
+                          <span className="t">{x.t}</span>
+                          <span className="s">{x.s}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="hint" style={{ marginTop: 8 }}>Each one takes under a minute — tell the story of how you got it, and the math follows.</div>
+                  </>
+                ) : (
+                  <span className="empty" style={{ display: "block", padding: 0 }}>No assets yet.</span>
+                )}
+              </td></tr>
+            )}
             {topLevel.flatMap((a) => [renderAssetRow(a), ...childrenOf(a.id).map((c) => renderAssetRow(c, true))])}
           </tbody>
         </table>
@@ -214,7 +242,7 @@ export default function Assets() {
       </div>
 
       {assetSheet.open && hhId && (
-        <AssetSheet householdId={hhId} existing={assetSheet.edit} members={members} onClose={() => setAssetSheet({ open: false })} onSaved={() => { setAssetSheet({ open: false }); refresh(); }} onChanged={refresh} />
+        <AssetSheet householdId={hhId} existing={assetSheet.edit} presetClass={assetSheet.presetClass} presetRented={assetSheet.presetRented} members={members} onClose={() => setAssetSheet({ open: false })} onSaved={() => { setAssetSheet({ open: false }); refresh(); }} onChanged={refresh} />
       )}
       {loanSheet.open && hhId && (
         <LoanSheet householdId={hhId} existing={loanSheet.edit} assets={assets} members={members} onClose={() => setLoanSheet({ open: false })} onSaved={() => { setLoanSheet({ open: false }); refresh(); }} />

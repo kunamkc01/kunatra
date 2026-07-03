@@ -97,7 +97,10 @@ export async function register(body: any) {
   const passwordHash = hashPassword(body.password);
   const fullName = typeof body.fullName === 'string' ? body.fullName.trim() : null;
   const phone = typeof body.phone === 'string' ? body.phone.trim() || null : null;
-  const householdName = (typeof body.householdName === 'string' && body.householdName.trim()) || 'My household';
+  // Default the household to the person's name — renameable any time (Profile).
+  const firstName = (fullName ?? '').trim().split(/\s+/)[0];
+  const householdName = (typeof body.householdName === 'string' && body.householdName.trim())
+    || (firstName ? `${firstName}'s household` : 'My household');
 
   const client = await db().connect();
   try {
@@ -131,6 +134,8 @@ export async function register(body: any) {
     void sendEmail(email, 'Welcome to Kunatra',
       `Hi${fullName ? ' ' + fullName : ''}, welcome to Kunatra — a mirror for your money.\n\n` +
       `You've created the household "${householdName}". ${roleBlurb('owner')}\n\n` +
+      `Your Portfolio has a short checklist to build your mirror — add what you own, complete your ` +
+      `property details (that unlocks free AI value estimates), and invite your family.\n\n` +
       `Get started: ${appUrl}\n\n` +
       `Kunatra shows you where you stand — it never tells you what to buy, sell or borrow.`);
     return session(u.rows[0].id, householdId);

@@ -57,7 +57,7 @@ const thisYear = new Date().getFullYear();
 const monthsSince = (y: number) => Math.max(1, (thisYear - y) * 12 + (new Date().getMonth() + 1));
 
 export function AssetSheet({
-  householdId, existing, members, onClose, onSaved, onChanged,
+  householdId, existing, members, onClose, onSaved, onChanged, presetClass, presetRented,
 }: {
   householdId: string;
   existing?: Asset | null;
@@ -65,11 +65,14 @@ export function AssetSheet({
   onClose: () => void;
   onSaved: () => void;
   onChanged?: () => void;
+  /** One-tap starters preselect the class (and rented usage) for a new asset. */
+  presetClass?: AssetClass;
+  presetRented?: boolean;
 }) {
   const [name, setName] = useState(existing?.name ?? "");
-  const [assetClass, setAssetClass] = useState<AssetClass>(existing?.assetClass ?? "real_estate");
+  const [assetClass, setAssetClass] = useState<AssetClass>(existing?.assetClass ?? presetClass ?? "real_estate");
   const [memberId, setMemberId] = useState(existing?.memberId ?? "");
-  const [liquid, setLiquid] = useState<boolean>(existing?.liquid ?? false);
+  const [liquid, setLiquid] = useState<boolean>(existing?.liquid ?? (presetClass ? CLASSES.find((c) => c.value === presetClass)!.liquidDefault : false));
 
   // The acquisition story.
   const [how, setHow] = useState(existing?.acquiredHow ?? "bought");
@@ -77,7 +80,8 @@ export function AssetSheet({
   const [price, setPrice] = useState(existing?.costBasis != null ? String(existing.costBasis) : ""); // acquisition price / cost basis
   const [value, setValue] = useState(existing ? String(existing.value) : ""); // worth today
   const [monthly, setMonthly] = useState(existing?.monthlyContribution != null ? String(existing.monthlyContribution) : "");
-  const [usage, setUsage] = useState<"live_in" | "rented">(existing && (existing.monthlyRent ?? 0) > 0 ? "rented" : "live_in");
+  const [usage, setUsage] = useState<"live_in" | "rented">(
+    existing ? ((existing.monthlyRent ?? 0) > 0 ? "rented" : "live_in") : presetRented ? "rented" : "live_in");
   const [rent, setRent] = useState(existing?.monthlyRent != null ? String(existing.monthlyRent) : "");
   const [rentTds, setRentTds] = useState(existing?.rentTds != null ? String(existing.rentTds) : "");
 
