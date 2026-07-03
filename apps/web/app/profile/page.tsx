@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { api, getUser, setStoredUser, type User } from "@/lib/api";
+import { api, getUser, setStoredUser, type User, type Member } from "@/lib/api";
 import { useAuth } from "@/lib/useAuth";
+import { inr } from "@/lib/format";
 import { Shell } from "@/components/Shell";
 
 /** Resize a chosen image to a small square data URL (keeps avatars tiny). */
@@ -43,6 +44,11 @@ export default function Profile() {
   // household name (owner)
   const [hhName, setHhName] = useState(""); const [hhMsg, setHhMsg] = useState<string | null>(null); const [hhErr, setHhErr] = useState<string | null>(null); const [hhBusy, setHhBusy] = useState(false);
 
+  // your salary & spending (the person linked to this login)
+  const [person, setPerson] = useState<Member | null>(null);
+  const [gross, setGross] = useState(""); const [tds, setTds] = useState(""); const [spend, setSpend] = useState("");
+  const [payMsg, setPayMsg] = useState<string | null>(null); const [payErr, setPayErr] = useState<string | null>(null); const [payBusy, setPayBusy] = useState(false);
+
   useEffect(() => {
     if (!ready) return;
     api.me().then((u) => { setMe(u); setFullName(u.fullName ?? ""); setPhone(u.phone ?? ""); setAvatar(u.avatar ?? null); }).catch(() => setMe(getUser()));
@@ -52,6 +58,35 @@ export default function Profile() {
     if (!ready || !user || user.role !== "owner") return;
     api.getHousehold(user.householdId).then((h) => setHhName(h.displayName)).catch(() => {});
   }, [ready, user]);
+
+  // Load the person this login is linked to (owners and members have one).
+  useEffect(() => {
+    if (!ready || !user?.memberId) return;
+    api.listMembers(user.householdId).then((ms) => {
+      const p = ms.find((m) => m.id === user.memberId) ?? null;
+      setPerson(p);
+      if (p) {
+        setGross(p.monthlyGross != null ? String(p.monthlyGross) : "");
+        setTds(p.monthlyTds != null ? String(p.monthlyTds) : "");
+        setSpend(p.monthlyExpenses != null ? String(p.monthlyExpenses) : "");
+      }
+    }).catch(() => {});
+  }, [ready, user]);
+
+  async function savePay(e: React.FormEvent) {
+    e.preventDefault();
+    if (!person) return;
+    setPayBusy(true); setPayErr(null); setPayMsg(null);
+    try {
+      await api.updateMember(person.id, {
+        monthlyGross: gross ? Number(gross) : null,
+        monthlyTds: tds ? Number(tds) : null,
+        monthlyExpenses: spend ? Number(spend) : null,
+      });
+      setPayMsg("Saved ✓");
+    } catch (e: any) { setPayErr(e.message ?? "Could not save"); }
+    finally { setPayBusy(false); }
+  }
 
   async function saveHousehold(e: React.FormEvent) {
     e.preventDefault();
@@ -132,6 +167,44 @@ export default function Profile() {
           {savedMsg && <span style={{ color: "var(--good)", fontSize: 12.5 }}>{savedMsg}</span>}
         </div>
       </div>
+
+      {person && (
+        <form className="panel" onSubmit={savePay}>
+          <h3>Your salary &amp; spending</h3>
+          <p className="desc">
+            For <b style={{ color: "var(--ink)" }}>{me.households?.find((h) => h.householdId === me.householdId)?.householdName ?? "this household"}</b> only —
+            your income and personal spend live on you and roll up into this household's totals, surplus and runway.
+            {(me.households?.length ?? 0) > 1 ? " Switch household (top-right menu) to edit your figures elsewhere." : ""}
+          </p>
+          <div className="row2">
+            <div className="field">
+              <label>Gross salary (₹/month)</label>
+              <input inputMode="numeric" value={gross} onChange={(e) => { setGross(e.target.value); setPayMsg(null); }} placeholder="250000" />
+            </div>
+            <div className="field">
+              <label>TDS (₹/month)</label>
+              <input inputMode="numeric" value={tds} onChange={(e) => { setTds(e.target.value); setPayMsg(null); }} placeholder="tax deducted" />
+            </div>
+          </div>
+          <div className="row2">
+            <div className="field">
+              <label>Personal expenses (₹/month)</label>
+              <input inputMode="numeric" value={spend} onChange={(e) => { setSpend(e.target.value); setPayMsg(null); }} placeholder="your own monthly spend" />
+            </div>
+            <div className="field" style={{ display: "flex", alignItems: "flex-end" }}>
+              <div className="hint">
+                {gross ? <>Take-home <b style={{ color: "var(--ink)" }}>{inr(Number(gross) - (tds ? Number(tds) : 0))}</b>/mo</> : "Enter your gross salary and TDS."}
+                {gross && spend ? <> · keeps <b style={{ color: "var(--ink)" }}>{inr(Number(gross) - (tds ? Number(tds) : 0) - Number(spend))}</b> after personal spend</> : null}
+              </div>
+            </div>
+          </div>
+          {payErr && <div className="err">{payErr}</div>}
+          <div className="actions">
+            <button className="btn primary small" type="submit" disabled={payBusy}>{payBusy ? "…" : "Save salary & spending"}</button>
+            {payMsg && <span style={{ color: "var(--good)", fontSize: 12.5 }}>{payMsg}</span>}
+          </div>
+        </form>
+      )}
 
       {me.role === "owner" && (
         <form className="panel" onSubmit={saveHousehold}>

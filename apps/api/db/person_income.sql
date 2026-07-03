@@ -45,3 +45,32 @@ END $$;
 UPDATE households hh SET monthly_take_home_paise = NULL
  WHERE hh.monthly_take_home_paise IS NOT NULL
    AND EXISTS (SELECT 1 FROM members m WHERE m.household_id = hh.id AND m.monthly_gross_paise IS NOT NULL);
+
+-- Every OWNER login is a person in their own household. Backfill the missing
+-- links: attach to an existing member matching their name (or 'Self'), else
+-- create one from their name. Managers/advisors/operations are not household
+-- people, so they're untouched. Idempotent via the member_id IS NULL guard.
+DO $$
+DECLARE
+  ms RECORD;
+  mid UUID;
+BEGIN
+  FOR ms IN
+    SELECT m.id AS membership_id, m.household_id, u.full_name, u.email
+      FROM memberships m JOIN users u ON u.id = m.user_id
+     WHERE m.role = 'owner' AND m.member_id IS NULL
+  LOOP
+    SELECT id INTO mid FROM members
+     WHERE household_id = ms.household_id
+       AND (name = COALESCE(NULLIF(ms.full_name, ''), '') OR name = 'Self')
+       AND NOT EXISTS (SELECT 1 FROM memberships x WHERE x.member_id = members.id)
+     ORDER BY (name = 'Self') LIMIT 1;
+    IF mid IS NULL THEN
+      INSERT INTO members (household_id, name)
+      VALUES (ms.household_id, COALESCE(NULLIF(ms.full_name, ''), split_part(ms.email, '@', 1)))
+      RETURNING id INTO mid;
+    END IF;
+    UPDATE memberships SET member_id = mid WHERE id = ms.membership_id;
+    mid := NULL;
+  END LOOP;
+END $$;
