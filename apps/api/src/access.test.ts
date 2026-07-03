@@ -39,11 +39,12 @@ test('advisor role & approvals', { skip: hasDb ? false : 'DATABASE_URL not set' 
     });
 
     await t.test('advisor sees the financial picture (unlike operations)', async () => {
-      assert.equal((await call('GET', `/api/households/${householdId}/assessment`, undefined, advisorTok)).status, 200);
-      const hh = (await call('GET', `/api/households/${householdId}`, undefined, advisorTok)).body;
-      assert.equal(hh.monthlyTakeHome, 200000); // advisor sees financials
-      const hhOps = (await call('GET', `/api/households/${householdId}`, undefined, opsTok)).body;
-      assert.equal(hhOps.monthlyTakeHome, null); // operations do not
+      const a = await call('GET', `/api/households/${householdId}/assessment`, undefined, advisorTok);
+      assert.equal(a.status, 200);
+      assert.equal(a.body.income.total, 200000); // advisor sees the money (salary lives on the person now)
+      assert.equal((await call('GET', `/api/households/${householdId}/assessment`, undefined, opsTok)).status, 403); // operations do not
+      const members = (await call('GET', `/api/households/${householdId}/members`, undefined, opsTok)).body;
+      assert.ok(members.every((m: any) => m.monthlyNet == null)); // and incomes are masked for them
     });
 
     await t.test('advisor is read-only (cannot change anything)', async () => {

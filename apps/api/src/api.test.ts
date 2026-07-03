@@ -43,11 +43,19 @@ test('API write path', { skip: hasDb ? false : 'DATABASE_URL not set' }, async (
       householdId = body.user.householdId;
     });
 
-    await t.test('owner sees household with cash-flow inputs', async () => {
+    await t.test('registration puts the salary on the person, not the household', async () => {
       const { status, body } = await call('GET', `/api/households/${householdId}`);
       assert.equal(status, 200);
       assert.equal(body.displayName, 'Test HH');
-      assert.equal(body.monthlyTakeHome, 200000);
+      assert.equal(body.monthlyTakeHome, null);      // household holds only shared essentials
+      assert.equal(body.monthlyEssential, 60000);
+      const members = (await call('GET', `/api/households/${householdId}/members`)).body;
+      const me = members.find((m: any) => m.name === 'Test Owner');
+      assert.ok(me, 'registrant exists as a person');
+      assert.equal(me.monthlyNet, 200000);           // their take-home lives on them
+      // and the engine still sees the income
+      const a = (await call('GET', `/api/households/${householdId}/assessment`)).body;
+      assert.equal(a.income.total, 200000);
     });
 
     await t.test('adds a real-estate asset and persists its profile', async () => {

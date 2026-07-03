@@ -76,10 +76,9 @@ test('family members', { skip: hasDb ? false : 'DATABASE_URL not set' }, async (
       opsTok = (await call('POST', '/api/auth/login', { email: opsEmail, password: 'secret123' })).body.token;
 
       const list = (await call('GET', `/api/households/${householdId}/members`, undefined, opsTok)).body;
-      assert.equal(list.length, 2);
-      assert.equal(list[0].name != null, true);
-      assert.equal(list[0].monthlyNet, null); // income hidden
-      assert.equal(list[0].monthlyGross, null);
+      assert.equal(list.length, 3); // A, B + the registrant (created as a person at signup)
+      assert.ok(list.every((m: any) => m.name != null));
+      assert.ok(list.every((m: any) => m.monthlyNet == null && m.monthlyGross == null && m.monthlyExpenses == null)); // money hidden
     });
 
     await t.test('operations cannot add members or see per-member exposure', async () => {

@@ -105,14 +105,11 @@ export async function register(body: any) {
     const dup = await client.query(`SELECT 1 FROM users WHERE email = $1`, [email]);
     if (dup.rowCount) throw new HttpError(409, 'email_taken', 'That email is already registered');
 
+    // People earn and spend; the household holds only the SHARED essentials.
     const hh = await client.query(
-      `INSERT INTO households (display_name, monthly_take_home_paise, monthly_essential_paise)
-       VALUES ($1,$2,$3) RETURNING id`,
-      [
-        householdName,
-        body.monthlyTakeHome ? Math.round(Number(body.monthlyTakeHome) * 100) : null,
-        body.monthlyEssential ? Math.round(Number(body.monthlyEssential) * 100) : null,
-      ]
+      `INSERT INTO households (display_name, monthly_essential_paise)
+       VALUES ($1,$2) RETURNING id`,
+      [householdName, body.monthlyEssential ? Math.round(Number(body.monthlyEssential) * 100) : null]
     );
     const householdId = hh.rows[0].id;
     const u = await client.query(
@@ -120,7 +117,15 @@ export async function register(body: any) {
        VALUES ($1,$2,$3,$4,$5,'owner') RETURNING id`,
       [householdId, email, passwordHash, fullName, phone]
     );
-    await client.query(`INSERT INTO memberships (user_id, household_id, role) VALUES ($1,$2,'owner')`, [u.rows[0].id, householdId]);
+    // The registrant IS a person in the household — their take-home lives on
+    // their own member record, and their login links to it.
+    const personName = fullName || email.split('@')[0];
+    const person = await client.query(
+      `INSERT INTO members (household_id, name, monthly_gross_paise) VALUES ($1,$2,$3) RETURNING id`,
+      [householdId, personName, body.monthlyTakeHome ? Math.round(Number(body.monthlyTakeHome) * 100) : null]
+    );
+    await client.query(`INSERT INTO memberships (user_id, household_id, role, member_id) VALUES ($1,$2,'owner',$3)`,
+      [u.rows[0].id, householdId, person.rows[0].id]);
     await client.query('COMMIT');
     // Welcome the new owner (best-effort; never blocks signup).
     void sendEmail(email, 'Welcome to Kunatra',
@@ -166,15 +171,18 @@ export async function createHousehold(userId: string, body: any) {
   try {
     await client.query('BEGIN');
     const hh = await client.query(
-      `INSERT INTO households (display_name, monthly_take_home_paise, monthly_essential_paise)
-       VALUES ($1,$2,$3) RETURNING id`,
-      [
-        name,
-        body.monthlyTakeHome ? Math.round(Number(body.monthlyTakeHome) * 100) : null,
-        body.monthlyEssential ? Math.round(Number(body.monthlyEssential) * 100) : null,
-      ]
+      `INSERT INTO households (display_name, monthly_essential_paise) VALUES ($1,$2) RETURNING id`,
+      [name, body.monthlyEssential ? Math.round(Number(body.monthlyEssential) * 100) : null]
     );
-    await client.query(`INSERT INTO memberships (user_id, household_id, role) VALUES ($1,$2,'owner')`, [userId, hh.rows[0].id]);
+    // The creator is a person in their new household too (salary goes on them).
+    const who = await client.query(`SELECT full_name, email FROM users WHERE id = $1`, [userId]);
+    const personName = who.rows[0]?.full_name || (who.rows[0]?.email ?? 'Me').split('@')[0];
+    const person = await client.query(
+      `INSERT INTO members (household_id, name, monthly_gross_paise) VALUES ($1,$2,$3) RETURNING id`,
+      [hh.rows[0].id, personName, body.monthlyTakeHome ? Math.round(Number(body.monthlyTakeHome) * 100) : null]
+    );
+    await client.query(`INSERT INTO memberships (user_id, household_id, role, member_id) VALUES ($1,$2,'owner',$3)`,
+      [userId, hh.rows[0].id, person.rows[0].id]);
     await client.query('COMMIT');
     return session(userId, hh.rows[0].id);
   } catch (e) {
