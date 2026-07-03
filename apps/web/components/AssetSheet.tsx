@@ -87,6 +87,13 @@ export function AssetSheet({
   const [address, setAddress] = useState(re?.address ?? "");
   const [sqft, setSqft] = useState(re?.sqft != null ? String(re.sqft) : "");
   const [undividedShare, setUndividedShare] = useState(re?.undividedShare ?? "");
+  const [propertyType, setPropertyType] = useState(re?.propertyType ?? "");
+  const [bedrooms, setBedrooms] = useState(re?.bedrooms != null ? String(re.bedrooms) : "");
+  const [bathrooms, setBathrooms] = useState(re?.bathrooms != null ? String(re.bathrooms) : "");
+  const [floor, setFloor] = useState(re?.floor != null ? String(re.floor) : "");
+  const [builtYear, setBuiltYear] = useState(re?.builtYear != null ? String(re.builtYear) : "");
+  const [city, setCity] = useState(re?.city ?? "");
+  const [locality, setLocality] = useState(re?.locality ?? "");
   const [ptin, setPtin] = useState(re?.ptin ?? "");
 
   const [busy, setBusy] = useState(false);
@@ -126,7 +133,16 @@ export function AssetSheet({
       monthlyRent: group === "property" && usage === "rented" ? (rent ? Number(rent) : null) : null,
       rentTds: group === "property" && usage === "rented" ? (rentTds ? Number(rentTds) : null) : null,
       ...(group === "property"
-        ? { realEstate: { address, sqft: sqft ? Number(sqft) : null, undividedShare, ptin, carPark: re?.carPark ?? null, carParkSize: re?.carParkSize ?? null } }
+        ? { realEstate: {
+              address, sqft: sqft ? Number(sqft) : null, undividedShare, ptin,
+              carPark: re?.carPark ?? null, carParkSize: re?.carParkSize ?? null,
+              propertyType: propertyType || null,
+              bedrooms: bedrooms ? Number(bedrooms) : null,
+              bathrooms: bathrooms ? Number(bathrooms) : null,
+              floor: floor ? Number(floor) : null,
+              builtYear: builtYear ? Number(builtYear) : null,
+              city: city || null, locality: locality || null,
+            } }
         : {}),
     };
 
@@ -317,6 +333,28 @@ export function AssetSheet({
                   <div className="field"><label>PTIN</label><input value={ptin} onChange={(e) => setPtin(e.target.value)} placeholder="Property tax ID" /></div>
                 </div>
                 <div className="field"><label>Undivided share</label><input value={undividedShare} onChange={(e) => setUndividedShare(e.target.value)} placeholder="3.2%" /></div>
+                <div className="row2">
+                  <div className="field"><label>City</label><input value={city} onChange={(e) => setCity(e.target.value)} placeholder="Hyderabad" /></div>
+                  <div className="field"><label>Locality / area</label><input value={locality} onChange={(e) => setLocality(e.target.value)} placeholder="Kukatpally" /></div>
+                </div>
+                <div className="row2">
+                  <div className="field">
+                    <label>Type</label>
+                    <select value={propertyType} onChange={(e) => setPropertyType(e.target.value)}>
+                      <option value="">—</option>
+                      <option value="apartment">Apartment</option>
+                      <option value="independent">Independent house</option>
+                      <option value="villa">Villa</option>
+                      <option value="plot">Plot / land</option>
+                    </select>
+                  </div>
+                  <div className="field"><label>Built year</label><input inputMode="numeric" value={builtYear} onChange={(e) => setBuiltYear(e.target.value)} placeholder="2012" /></div>
+                </div>
+                <div className="row2">
+                  <div className="field"><label>Bedrooms</label><input inputMode="numeric" value={bedrooms} onChange={(e) => setBedrooms(e.target.value)} placeholder="3" /></div>
+                  <div className="field"><label>Bathrooms · floor</label><div style={{ display: "flex", gap: 8 }}><input inputMode="numeric" value={bathrooms} onChange={(e) => setBathrooms(e.target.value)} placeholder="baths" /><input inputMode="numeric" value={floor} onChange={(e) => setFloor(e.target.value)} placeholder="floor" /></div></div>
+                </div>
+                <div className="hint">City, locality, type and size power the AI value estimate on the property's page.</div>
               </>
             )}
           </div>

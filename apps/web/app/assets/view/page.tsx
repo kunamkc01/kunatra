@@ -2,7 +2,7 @@
 import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
-import { api, type Asset, type AssetDetail, type Member } from "@/lib/api";
+import { api, type Asset, type AssetDetail, type Member, type PropertyValuation } from "@/lib/api";
 import { inr, inrExact, assetClassLabel } from "@/lib/format";
 import { useAuth } from "@/lib/useAuth";
 import { Shell } from "@/components/Shell";
@@ -148,6 +148,11 @@ function AssetDetailView() {
         </div>
       )}
 
+      {/* AI value estimate — beside the user's value, never instead of it */}
+      {isProperty && asset && (
+        <PropertyInsights assetId={asset.id} ownValue={asset.value} canEdit={canEdit} canSeeFinancials={canSeeFinancials} onRecorded={load} />
+      )}
+
       {/* photos — everyone in the household can view; managing is server-scoped */}
       {asset && canManagePhotos && <PhotoGallery assetId={asset.id} />}
 
@@ -176,6 +181,115 @@ function Tile({ label, value, sub, tone }: { label: string; value: string; sub?:
       <div className="tl">{label}</div>
       <div className="tv num" style={{ fontSize: 21, marginTop: 4, color }}>{value}</div>
       {sub && <div className="meta" style={{ marginTop: 2 }}>{sub}</div>}
+    </div>
+  );
+}
+
+
+// ---- AI property insights ---------------------------------------------------
+const CONF_PILL: Record<string, string> = { low: "p-warn", medium: "p-info", high: "p-good" };
+
+function PropertyInsights({ assetId, ownValue, canEdit, canSeeFinancials, onRecorded }: {
+  assetId: string; ownValue: number; canEdit: boolean; canSeeFinancials: boolean; onRecorded: () => void;
+}) {
+  const [v, setV] = useState<PropertyValuation | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = useCallback(() => api.getPropertyValuation(assetId).then((x) => { setV(x); setLoaded(true); }).catch(() => setLoaded(true)), [assetId]);
+  useEffect(() => { load(); }, [load]);
+
+  // While the estimate is generating, poll every 5s.
+  useEffect(() => {
+    if (v?.status !== "pending") return;
+    const t = setInterval(load, 5000);
+    return () => clearInterval(t);
+  }, [v?.status, load]);
+
+  async function refresh() {
+    setBusy(true); setErr(null);
+    try { setV(await api.refreshPropertyValuation(assetId)); }
+    catch (e: any) { setErr(e.message ?? "Could not refresh"); }
+    finally { setBusy(false); }
+  }
+  async function feedback(f: "too_low" | "accurate" | "too_high") {
+    try { setV(await api.propertyValuationFeedback(assetId, { feedback: f })); }
+    catch (e: any) { setErr(e.message ?? "Could not save feedback"); }
+  }
+  async function record() {
+    if (!v?.estimatedValue) return;
+    if (!confirm(`Record ${inrExact(v.estimatedValue)} as a dated valuation for this asset? This updates its current value.`)) return;
+    try { await api.addValuation(assetId, { value: v.estimatedValue, asOf: new Date().toISOString().slice(0, 10), source: "AI estimate" }); onRecorded(); }
+    catch (e: any) { setErr(e.message ?? "Could not record"); }
+  }
+
+  if (!loaded || !canSeeFinancials) return null;
+  const diffPct = v?.estimatedValue && ownValue > 0 ? ((v.estimatedValue - ownValue) / ownValue) * 100 : null;
+
+  return (
+    <div className="panel" style={{ marginTop: 6 }}>
+      <div className="sec-label" style={{ marginTop: 0 }}>
+        Property insights
+        {v?.status === "ok" && canEdit && <button className="btn ghost small" type="button" onClick={refresh} disabled={busy}>Refresh</button>}
+      </div>
+
+      {!v && (
+        <div>
+          <p className="desc" style={{ marginTop: 2 }}>Get an AI estimate of this property's market value and rent — free, informational only.</p>
+          {canEdit && <button className="btn small primary" type="button" onClick={refresh} disabled={busy}>{busy ? "Starting…" : "Generate insights"}</button>}
+        </div>
+      )}
+
+      {v?.status === "pending" && (
+        <div className="hint" style={{ padding: "8px 0" }}>Generating property insights… this usually takes under a minute.</div>
+      )}
+
+      {v?.status === "unavailable" && (
+        <div>
+          <div className="hint" style={{ padding: "6px 0" }}>We couldn't produce a reliable estimate for this property{v.generatedAt ? "" : " yet"}. Adding city, locality, type and area (Edit details) helps a lot.</div>
+          {canEdit && <button className="btn small" type="button" onClick={refresh} disabled={busy}>Try again</button>}
+        </div>
+      )}
+
+      {v?.status === "ok" && v.estimatedValue != null && (
+        <>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+            <span className="num" style={{ fontSize: 24 }}>{inr(v.lowValue ?? v.estimatedValue)} – {inr(v.highValue ?? v.estimatedValue)}</span>
+            <span className="meta">mid {inr(v.estimatedValue)}</span>
+            {v.confidence && <span className={`pill ${CONF_PILL[v.confidence]}`}>{v.confidence} confidence</span>}
+          </div>
+          <div className="meta" style={{ marginTop: 6 }}>
+            {diffPct != null && <>vs your value {inr(ownValue)}: <b style={{ color: Math.abs(diffPct) < 10 ? "var(--good)" : "var(--warn)" }}>{diffPct >= 0 ? "+" : ""}{diffPct.toFixed(0)}%</b> · </>}
+            {v.pricePerSqft != null && <>{inr(v.pricePerSqft)}/sqft · </>}
+            {v.estimatedRent != null && <>rent est. {inr(v.estimatedRent)}/mo · </>}
+            {v.rentalYieldPct != null && <>yield {v.rentalYieldPct.toFixed(1)}% · </>}
+            {v.annualGrowthPct != null && <>growth {v.annualGrowthPct.toFixed(1)}%/yr</>}
+          </div>
+          {v.summary && <p className="desc" style={{ marginTop: 8 }}>{v.summary}</p>}
+          {v.reasons.length > 0 && (
+            <ul style={{ margin: "6px 0 0 18px", fontSize: 13, color: "var(--slate)" }}>
+              {v.reasons.map((r, i) => <li key={i}>{r}</li>)}
+            </ul>
+          )}
+          {canEdit && (
+            <div className="actions" style={{ marginTop: 10, flexWrap: "wrap" }}>
+              <span className="meta" style={{ marginRight: 2 }}>How does this look?</span>
+              {(["too_low", "accurate", "too_high"] as const).map((f) => (
+                <button key={f} className={`btn ghost small ${v.feedback === f ? "primary" : ""}`} type="button" onClick={() => feedback(f)}>
+                  {f === "too_low" ? "Too low" : f === "accurate" ? "Looks accurate" : "Too high"}
+                </button>
+              ))}
+              <button className="btn ghost small" type="button" onClick={record}>Record as valuation</button>
+            </div>
+          )}
+          <div className="hint" style={{ marginTop: 8 }}>
+            AI-generated estimate for information only — not an official valuation{v.generatedAt ? ` · updated ${new Date(v.generatedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}` : ""}.
+          </div>
+        </>
+      )}
+
+      {err && <div className="err" style={{ marginTop: 6 }}>{err}</div>}
     </div>
   );
 }

@@ -38,6 +38,32 @@ export interface RealEstate {
   ptin?: string | null;
   carPark?: string | null;
   carParkSize?: string | null;
+  propertyType?: string | null;
+  bedrooms?: number | null;
+  bathrooms?: number | null;
+  floor?: number | null;
+  builtYear?: number | null;
+  city?: string | null;
+  locality?: string | null;
+}
+
+export interface PropertyValuation {
+  assetId: string;
+  status: "pending" | "ok" | "unavailable";
+  estimatedValue: number | null;
+  lowValue: number | null;
+  highValue: number | null;
+  pricePerSqft: number | null;
+  estimatedRent: number | null;
+  rentalYieldPct: number | null;
+  annualGrowthPct: number | null;
+  confidence: "low" | "medium" | "high" | null;
+  summary: string | null;
+  reasons: string[];
+  provider: string | null;
+  feedback: "too_low" | "accurate" | "too_high" | null;
+  userValue: number | null;
+  generatedAt: string | null;
 }
 
 export interface Member {
@@ -368,6 +394,11 @@ export const api = {
   createAsset: (id: string, b: Partial<Asset>) =>
     req<Asset>(`/api/households/${id}/assets`, { method: "POST", body: JSON.stringify(b) }),
   getAsset: (assetId: string) => req<Asset>(`/api/assets/${assetId}`),
+  getPropertyValuation: (assetId: string) => req<PropertyValuation | null>(`/api/assets/${assetId}/valuation`),
+  refreshPropertyValuation: (assetId: string) =>
+    req<PropertyValuation | null>(`/api/assets/${assetId}/valuation/refresh`, { method: "POST" }),
+  propertyValuationFeedback: (assetId: string, b: { feedback: "too_low" | "accurate" | "too_high"; userValue?: number }) =>
+    req<PropertyValuation>(`/api/assets/${assetId}/valuation/feedback`, { method: "POST", body: JSON.stringify(b) }),
   assetDetail: (assetId: string) => req<AssetDetail>(`/api/assets/${assetId}/detail`),
   updateAsset: (assetId: string, b: Partial<Asset>) =>
     req<Asset>(`/api/assets/${assetId}`, { method: "PATCH", body: JSON.stringify(b) }),
