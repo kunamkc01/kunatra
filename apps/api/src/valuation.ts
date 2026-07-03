@@ -5,9 +5,9 @@
 import { BedrockRuntimeClient, ConverseCommand } from '@aws-sdk/client-bedrock-runtime';
 import { db, rupeesToPaise, paiseToRupees, HttpError } from './pool.ts';
 
-export const PROMPT_VERSION = 'v1';
+export const PROMPT_VERSION = 'v2';
 const REGION = process.env.NOTIFY_REGION ?? process.env.AWS_REGION ?? 'us-east-1';
-const MODEL_ID = process.env.BEDROCK_MODEL_ID ?? 'us.anthropic.claude-haiku-4-5-20251001-v1:0';
+const MODEL_ID = process.env.BEDROCK_MODEL_ID ?? 'us.amazon.nova-pro-v1:0';
 const REFRESH_DAYS = 90;          // scheduled refresh
 const MIN_REFRESH_HOURS = 20;     // user/edit-triggered refresh at most ~once a day
 
@@ -36,9 +36,13 @@ function buildPrompt(i: ValuationInput): string {
     built_year: i.builtYear, purchase_price_inr: i.purchasePrice, purchase_year: i.purchaseYear,
     current_monthly_rent_inr: i.monthlyRent,
   }).filter(([, v]) => v != null && v !== '');
+  const today = new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
   return [
-    'You are a conservative Indian residential real-estate analyst. Estimate the current market value of this property.',
-    'Prefer under-promising: when unsure, widen the range and lower the confidence. All money in INR (rupees, plain integers).',
+    `You are an Indian residential real-estate analyst with current market knowledge. Estimate what this property would actually SELL for today, in ${today}.`,
+    'IMPORTANT: prices in Indian metros — especially Hyderabad, Bengaluru, Pune and NCR — have appreciated steeply in recent years.',
+    'Your training data likely reflects older, lower price levels; adjust upward to realistic current transaction prices for the specific locality.',
+    'Do not lowball. Reflect genuine uncertainty in the low–high range and the confidence field, not by deflating the midpoint.',
+    'All money in INR (rupees, plain integers).',
     '',
     'Property:',
     ...known.map(([k, v]) => `  ${k}: ${v}`),
