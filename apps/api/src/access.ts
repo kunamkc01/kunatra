@@ -134,6 +134,17 @@ export async function heartbeat(req: Request): Promise<void> {
   }
 }
 
+/** Retention: sign-in history is kept 180 days, then deleted (privacy page says so). */
+export async function purgeOldEvents(): Promise<void> {
+  if (!process.env.DATABASE_URL) return;
+  try {
+    const { rowCount } = await db().query(`DELETE FROM login_events WHERE created_at < now() - interval '180 days'`);
+    if (rowCount) console.log(`[access] purged ${rowCount} sign-in event(s) older than 180 days`);
+  } catch (e: any) {
+    console.error(`[access] purge failed: ${e?.message}`);
+  }
+}
+
 // ---- reads -------------------------------------------------------------------
 const eventRow = (r: any) => ({
   at: r.created_at, event: r.event, success: r.success, method: r.method,

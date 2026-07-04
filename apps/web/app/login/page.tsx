@@ -89,7 +89,7 @@ export default function Login() {
           <a href="/demo" style={{ color: "var(--slate)" }}>Not sure yet? See a sample mirror →</a>
         </div>
       </div>
-      <p className="foot">A mirror, not an advisor. Not financial advice.</p>
+      <p className="foot">A mirror, not an advisor. Not financial advice. · <a href="https://www.kunatra.com/privacy.html" style={{ color: "inherit" }}>Privacy</a></p>
     </div>
   );
 }
