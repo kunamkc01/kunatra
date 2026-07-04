@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   api, getUser,
-  type Asset, type Vendor, type WorkOrder, type Inspection, type Household, type OperationsSummary, type WorkOrderStatus, type ComplianceItem, type Approval, type RentCollection, type RentSummary,
+  type Asset, type Vendor, type WorkOrder, type Inspection, type Household, type OperationsSummary, type WorkOrderStatus, type ComplianceItem, type Approval, type RentCollection, type RentSummary, type RentGap,
 } from "@/lib/api";
 import { useAuth } from "@/lib/useAuth";
 import { inr } from "@/lib/format";
@@ -46,6 +46,7 @@ export default function Operations() {
   const [requests, setRequests] = useState<Approval[]>([]);
   const [rentRoll, setRentRoll] = useState<RentCollection[]>([]);
   const [rentSummary, setRentSummary] = useState<RentSummary | null>(null);
+  const [rentGap, setRentGap] = useState<RentGap | null>(null);
   const [summary, setSummary] = useState<OperationsSummary | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -58,13 +59,14 @@ export default function Operations() {
   const load = useCallback(async (id: string) => {
     setErr(null);
     try {
-      const [hh, a, v, w, i, s, c, r, rr, rs] = await Promise.all([
+      const [hh, a, v, w, i, s, c, r, rr, rs, rg] = await Promise.all([
         api.getHousehold(id), api.listAssets(id), api.listVendors(id), api.listWorkOrders(id), api.listInspections(id), api.operationsSummary(id), api.listCompliance(id),
         // members view the upkeep but aren't part of the approval workflow
         getUser()?.role === "member" ? Promise.resolve([]) : api.listApprovals(id),
         api.listRent(id), api.rentSummary(id),
+        getUser()?.role === "operations" ? Promise.resolve(null) : api.rentMarketGap(id).catch(() => null),
       ]);
-      setHousehold(hh); setAssets(a); setVendors(v); setWorkOrders(w); setInspections(i); setSummary(s); setCompliance(c); setRequests(r); setRentRoll(rr); setRentSummary(rs);
+      setHousehold(hh); setAssets(a); setVendors(v); setWorkOrders(w); setInspections(i); setSummary(s); setCompliance(c); setRequests(r); setRentRoll(rr); setRentSummary(rs); setRentGap(rg as RentGap | null);
     } catch (e: any) {
       setErr(e.message ?? "Could not load");
     }
@@ -191,6 +193,12 @@ export default function Operations() {
       {tab === "rent" && (
         <>
           <div className="sec-label">Rent roll</div>
+          {rentGap && rentGap.comparedCount > 0 && rentGap.totalYearlyGap > 0 && (
+            <div className="strip warn" style={{ marginTop: 0, marginBottom: 10 }}>
+              <span>Your lettings run <b>{inr(rentGap.totalYearlyGap)}/yr under</b> the AI market estimate
+                ({rentGap.underMarketCount} of {rentGap.comparedCount} compared) — an estimate, not advice.</span>
+            </div>
+          )}
           {rentSummary && (rentSummary.outstandingCount > 0
             ? <div className="hint" style={{ margin: "0 4px 10px" }}>{rentSummary.outstandingCount} outstanding · {inr(rentSummary.outstanding)} to collect{rentSummary.overdueCount ? ` · ${rentSummary.overdueCount} overdue` : ""}</div>
             : <div className="hint" style={{ margin: "0 4px 10px" }}>All rent collected. New lines open automatically each month.</div>)}
@@ -208,6 +216,14 @@ export default function Operations() {
                 <div className="meta">
                   {inr(rc.netDue)} net{rc.tds > 0 ? ` (${inr(rc.amountDue)} − ${inr(rc.tds)} TDS)` : ""}
                   {rc.status === "collected" && rc.collectedOn ? ` · collected ${rc.collectedOn}${rc.collected != null ? ` · ${inr(rc.collected)}` : ""}` : ""}
+                  {(() => {
+                    const g = rentGap?.items.find((i) => i.assetId === rc.assetId);
+                    return g && Math.abs(g.gapMonthly) >= 1000
+                      ? <span className={`pill ${g.gapMonthly > 0 ? "p-warn" : "p-good"}`} style={{ marginLeft: 8 }}>
+                          {inr(Math.abs(g.gapMonthly))}/mo {g.gapMonthly > 0 ? "under" : "above"} market est.
+                        </span>
+                      : null;
+                  })()}
                 </div>
                 {!readOnly && <div className="acts">
                   {rc.status !== "collected"

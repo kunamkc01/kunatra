@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/useAuth";
 import { inr, assetClassLabel } from "@/lib/format";
 import { Shell } from "@/components/Shell";
 import { SetupChecklist } from "@/components/SetupChecklist";
+import { NetWorthTrend } from "@/components/NetWorthTrend";
 
 const ALLOC_COLORS = ["var(--navy)", "var(--accent)", "var(--good)", "var(--seal)", "var(--warn)", "var(--muted)", "var(--bad)"];
 const tileClass = (sev?: string) => (sev === "good" ? "g" : sev === "watch" ? "w" : sev === "warning" ? "b" : "");
@@ -97,6 +98,9 @@ export default function Portfolio() {
 
       {/* The owner's guided path — shows until the mirror is built. */}
       {!err && user && <SetupChecklist user={user} />}
+
+      {/* The mirror with memory — monthly net-worth snapshots. */}
+      {!err && hasData && user && <NetWorthTrend householdId={user.householdId} />}
 
       {!err && !hasData && user?.role !== "owner" && (
         <div className="explain">

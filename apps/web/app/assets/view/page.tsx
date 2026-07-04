@@ -150,7 +150,7 @@ function AssetDetailView() {
 
       {/* AI value estimate — beside the user's value, never instead of it */}
       {isProperty && asset && (
-        <PropertyInsights assetId={asset.id} ownValue={asset.value} canEdit={canEdit} canSeeFinancials={canSeeFinancials} onRecorded={load} />
+        <PropertyInsights assetId={asset.id} ownValue={asset.value} ownRent={asset.monthlyRent} canEdit={canEdit} canSeeFinancials={canSeeFinancials} onRecorded={load} />
       )}
 
       {/* photos — everyone in the household can view; managing is server-scoped */}
@@ -189,8 +189,8 @@ function Tile({ label, value, sub, tone }: { label: string; value: string; sub?:
 // ---- AI property insights ---------------------------------------------------
 const CONF_PILL: Record<string, string> = { low: "p-warn", medium: "p-info", high: "p-good" };
 
-function PropertyInsights({ assetId, ownValue, canEdit, canSeeFinancials, onRecorded }: {
-  assetId: string; ownValue: number; canEdit: boolean; canSeeFinancials: boolean; onRecorded: () => void;
+function PropertyInsights({ assetId, ownValue, ownRent, canEdit, canSeeFinancials, onRecorded }: {
+  assetId: string; ownValue: number; ownRent?: number | null; canEdit: boolean; canSeeFinancials: boolean; onRecorded: () => void;
 }) {
   const [v, setV] = useState<PropertyValuation | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -262,7 +262,11 @@ function PropertyInsights({ assetId, ownValue, canEdit, canSeeFinancials, onReco
           <div className="meta" style={{ marginTop: 6 }}>
             {diffPct != null && <>vs your value {inr(ownValue)}: <b style={{ color: Math.abs(diffPct) < 10 ? "var(--good)" : "var(--warn)" }}>{diffPct >= 0 ? "+" : ""}{diffPct.toFixed(0)}%</b> · </>}
             {v.pricePerSqft != null && <>{inr(v.pricePerSqft)}/sqft · </>}
-            {v.estimatedRent != null && <>rent est. {inr(v.estimatedRent)}/mo · </>}
+            {v.estimatedRent != null && (
+              <>rent est. {inr(v.estimatedRent)}/mo{ownRent != null && ownRent > 0 && Math.abs(v.estimatedRent - ownRent) >= 1000
+                ? <b style={{ color: v.estimatedRent > ownRent ? "var(--warn)" : "var(--good)" }}> ({inr(Math.abs(v.estimatedRent - ownRent))} {v.estimatedRent > ownRent ? "above" : "below"} your {inr(ownRent)})</b>
+                : null} · </>
+            )}
             {v.rentalYieldPct != null && <>yield {v.rentalYieldPct.toFixed(1)}% · </>}
             {v.annualGrowthPct != null && <>growth {v.annualGrowthPct.toFixed(1)}%/yr</>}
           </div>

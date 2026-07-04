@@ -202,6 +202,20 @@ export interface RentCollection {
 
 export interface RentSummary { outstandingCount: number; outstanding: number; overdueCount: number; }
 
+export interface NetWorthPoint {
+  month: string; // YYYY-MM-01
+  netWorth: number; grossAssets: number; totalDebt: number; liquid: number;
+  byMember: Record<string, number>;
+  byClass: Record<string, number>;
+}
+
+export interface RentGapItem {
+  assetId: string; name: string; actualRent: number; marketRent: number;
+  gapMonthly: number; gapYearly: number; gapPct: number | null;
+  confidence: "low" | "medium" | "high" | null;
+}
+export interface RentGap { items: RentGapItem[]; totalYearlyGap: number; underMarketCount: number; comparedCount: number; }
+
 export interface Vendor {
   id: string;
   householdId: string;
@@ -456,8 +470,12 @@ export const api = {
   deleteInspection: (inspId: string) => req<void>(`/api/inspections/${inspId}`, { method: "DELETE" }),
   operationsSummary: (id: string) => req<OperationsSummary>(`/api/households/${id}/operations/summary`),
 
+  // net-worth history (monthly snapshots)
+  networthHistory: (id: string) => req<NetWorthPoint[]>(`/api/households/${id}/networth-history`),
+
   // rent roll
   listRent: (id: string) => req<RentCollection[]>(`/api/households/${id}/rent`),
+  rentMarketGap: (id: string) => req<RentGap>(`/api/households/${id}/rent/market-gap`),
   rentSummary: (id: string) => req<RentSummary>(`/api/households/${id}/rent/summary`),
   collectRent: (rentId: string, b: { on?: string; amount?: number }) =>
     req<RentCollection>(`/api/rent/${rentId}/collect`, { method: "POST", body: JSON.stringify(b) }),
