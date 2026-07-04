@@ -65,6 +65,41 @@ export async function rentSummary(householdId: string) {
   };
 }
 
+/**
+ * Actual rent vs the AI market estimate, per rented property + a portfolio
+ * rollup. Pure comparison of stored numbers — no AI calls. This is an INSIGHT
+ * (the estimate side is an AI figure with a confidence), not engine fact.
+ */
+export async function rentMarketGap(householdId: string) {
+  await getHousehold(householdId);
+  const { rows } = await db().query(
+    `SELECT a.id AS asset_id, a.name, a.monthly_rent_paise, pv.estimated_rent_paise, pv.confidence
+       FROM assets a JOIN property_valuations pv ON pv.asset_id = a.id
+      WHERE a.household_id = $1 AND a.monthly_rent_paise > 0
+        AND pv.status = 'ok' AND pv.estimated_rent_paise IS NOT NULL
+      ORDER BY (pv.estimated_rent_paise - a.monthly_rent_paise) DESC`,
+    [householdId]
+  );
+  const items = rows.map((r) => {
+    const actual = paiseToRupees(r.monthly_rent_paise);
+    const market = paiseToRupees(r.estimated_rent_paise);
+    return {
+      assetId: r.asset_id, name: r.name,
+      actualRent: actual, marketRent: market,
+      gapMonthly: market - actual, gapYearly: (market - actual) * 12,
+      gapPct: actual > 0 ? ((market - actual) / actual) * 100 : null,
+      confidence: r.confidence ?? null,
+    };
+  });
+  const underMarket = items.filter((i) => i.gapMonthly > 0);
+  return {
+    items,
+    totalYearlyGap: underMarket.reduce((s, i) => s + i.gapYearly, 0), // money left on the table
+    underMarketCount: underMarket.length,
+    comparedCount: items.length,
+  };
+}
+
 /** Mark a rent line collected (defaults to today, net-of-TDS amount). */
 export async function collectRent(id: string, body: any) {
   const on = typeof body.on === 'string' && body.on ? body.on : null;

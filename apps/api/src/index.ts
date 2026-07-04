@@ -7,6 +7,7 @@ import * as repo from './repo.ts';
 import * as ops from './ops.ts';
 import * as rent from './rent.ts';
 import * as valuation from './valuation.ts';
+import * as history from './history.ts';
 import * as auth from './auth.ts';
 import * as compliance from './compliance.ts';
 import * as approvals from './approvals.ts';
@@ -93,6 +94,9 @@ app.get('/api/households/:id/assessment', sameHousehold, financialView, h(async 
   res.json(assess(await loadPosition(req.params.id), new Date()));
 }));
 
+// Net-worth history — the monthly snapshots behind the trend chart.
+app.get('/api/households/:id/networth-history', sameHousehold, financialView, h(async (req, res) => res.json(await history.listHistory(req.params.id))));
+
 // ---- assets (member logins are scoped to their own person) ---------------
 app.get('/api/households/:id/assets', sameHousehold, h(async (req, res) => res.json(await repo.listAssets(req.params.id))));
 app.post('/api/households/:id/assets', sameHousehold, editAssets, forceMemberOwnership, h(async (req, res) => {
@@ -158,6 +162,7 @@ app.get('/api/households/:id/operations/summary', sameHousehold, h(async (req, r
 // ---- rent roll (calendar-generated; owner/manager/operations collect) ----
 app.get('/api/households/:id/rent', sameHousehold, h(async (req, res) => res.json(await rent.listRentCollections(req.params.id))));
 app.get('/api/households/:id/rent/summary', sameHousehold, h(async (req, res) => res.json(await rent.rentSummary(req.params.id))));
+app.get('/api/households/:id/rent/market-gap', sameHousehold, h(async (req, res) => res.json(await rent.rentMarketGap(req.params.id))));
 app.post('/api/rent/:id/collect', scopeResource('rent_collections'), editOps, h(async (req, res) => res.json(await rent.collectRent(req.params.id, req.body))));
 app.patch('/api/rent/:id', scopeResource('rent_collections'), editOps, h(async (req, res) => res.json(await rent.updateRent(req.params.id, req.body))));
 
@@ -221,7 +226,7 @@ if (isMain) {
   app.listen(port, () => console.log(`Kunatra API on :${port}`));
   // Compliance reminders: sweep on startup, then twice a day (the reminded_on
   // guard keeps it to one notification per item per day).
-  const dailySweeps = () => { remindDueCompliance(); rent.generateRentDue(); ops.sweepFixedWorkOrders(); valuation.sweepValuations(); };
+  const dailySweeps = () => { remindDueCompliance(); rent.generateRentDue(); ops.sweepFixedWorkOrders(); valuation.sweepValuations(); history.sweepSnapshots(); };
   dailySweeps();
   setInterval(dailySweeps, 12 * 60 * 60 * 1000).unref();
 }
