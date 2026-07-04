@@ -353,6 +353,7 @@ export const api = {
   login: (b: { email: string; password: string }) =>
     req<Session>("/api/auth/login", { method: "POST", body: JSON.stringify(b) }),
   me: () => req<User>("/api/auth/me"),
+  demoAssessment: () => req<Assessment>("/api/assessment"), // public sample persona
   switchHousehold: (householdId: string) =>
     req<Session>("/api/auth/switch", { method: "POST", body: JSON.stringify({ householdId }) }),
   updateProfile: (b: { fullName?: string; avatar?: string | null; phone?: string | null }) =>

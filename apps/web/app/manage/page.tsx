@@ -8,6 +8,7 @@ import { Shell } from "@/components/Shell";
 import { AssetSheet } from "@/components/AssetSheet";
 import { LoanSheet } from "@/components/LoanSheet";
 import { MemberSheet } from "@/components/MemberSheet";
+import { QuickAddSheet } from "@/components/QuickAddSheet";
 
 export default function Assets() {
   const { user, ready } = useAuth();
@@ -26,6 +27,7 @@ export default function Assets() {
   const [assetSheet, setAssetSheet] = useState<{ open: boolean; edit?: Asset | null; presetClass?: AssetClass; presetRented?: boolean }>({ open: false });
   const [loanSheet, setLoanSheet] = useState<{ open: boolean; edit?: Loan | null }>({ open: false });
   const [memberSheet, setMemberSheet] = useState<{ open: boolean; edit?: Member | null }>({ open: false });
+  const [quickAdd, setQuickAdd] = useState(false);
 
   const load = useCallback(async (id: string, financials: boolean) => {
     setErr(null);
@@ -104,6 +106,10 @@ export default function Assets() {
           </td>
         )}
         <td style={{ whiteSpace: "nowrap" }}>
+          {canEditAssets && a.assetClass === "real_estate" && !(a.realEstate?.city && a.realEstate?.sqft) && !nested && (
+            <button className="pill p-warn chip-btn" title="City, locality and size unlock the free AI value estimate"
+              onClick={() => setAssetSheet({ open: true, edit: a })}>+ size &amp; locality → value estimate</button>
+          )}
           {canEditAssets && <button className="btn ghost small" onClick={() => setAssetSheet({ open: true, edit: a })}>Edit</button>}
           {(canManageMoney || (role === "member" && a.memberId === user?.memberId)) && <button className="btn ghost small danger" onClick={() => removeAsset(a)}>Delete</button>}
           {!canEditAssets && <span className="muted" style={{ fontSize: 12 }}>view</span>}
@@ -119,7 +125,12 @@ export default function Assets() {
           <h2 className="scr-title">Asset register</h2>
           <div className="scr-sub">Properties at the top level · loans netted per asset</div>
         </div>
-        {canEditAssets && <button className="btn primary" onClick={() => setAssetSheet({ open: true, edit: null })}>+ Add asset</button>}
+        {canEditAssets && (
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn ghost" onClick={() => setQuickAdd(true)} title="Several at once — name, type, value">Quick add</button>
+            <button className="btn primary" onClick={() => setAssetSheet({ open: true, edit: null })}>+ Add asset</button>
+          </div>
+        )}
       </div>
 
       {err && <div className="strip bad">{err}</div>}
@@ -241,6 +252,10 @@ export default function Assets() {
               : "You have operational access: keep the asset register and property details current. Financial totals, loans and cash flow are the owner's view."}
       </div>
 
+      {quickAdd && hhId && (
+        <QuickAddSheet householdId={hhId} onClose={() => setQuickAdd(false)}
+          onSaved={() => { setQuickAdd(false); refresh(); }} />
+      )}
       {assetSheet.open && hhId && (
         <AssetSheet householdId={hhId} existing={assetSheet.edit} presetClass={assetSheet.presetClass} presetRented={assetSheet.presetRented} members={members} onClose={() => setAssetSheet({ open: false })} onSaved={() => { setAssetSheet({ open: false }); refresh(); }} onChanged={refresh} />
       )}

@@ -87,7 +87,10 @@ export function AssetSheet({
 
   // Property specifics.
   const re = existing?.realEstate;
-  const [showProp, setShowProp] = useState(false);
+  // Auto-open the details for an existing property that's missing what the
+  // AI estimate needs (city + size) — the completeness chip lands people here.
+  const [showProp, setShowProp] = useState(
+    !!(existing && existing.assetClass === "real_estate" && !(existing.realEstate?.city && existing.realEstate?.sqft)));
   const [address, setAddress] = useState(re?.address ?? "");
   const [sqft, setSqft] = useState(re?.sqft != null ? String(re.sqft) : "");
   const [undividedShare, setUndividedShare] = useState(re?.undividedShare ?? "");

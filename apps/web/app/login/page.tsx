@@ -85,6 +85,9 @@ export default function Login() {
             <>Already have an account? <button onClick={() => { setMode("login"); setErr(null); }}>Sign in</button></>
           )}
         </div>
+        <div className="auth-toggle" style={{ marginTop: 6 }}>
+          <a href="/demo" style={{ color: "var(--slate)" }}>Not sure yet? See a sample mirror →</a>
+        </div>
       </div>
       <p className="foot">A mirror, not an advisor. Not financial advice.</p>
     </div>
