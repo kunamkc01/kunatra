@@ -318,6 +318,14 @@ export interface AdminStats {
   assetsByWeek: { week: string; count: number }[];
 }
 export interface AdminActivity { at: string; type: "user" | "household" | "asset"; detail: string; }
+
+export interface SigninEvent {
+  at: string; event: "register" | "login" | "switch"; success: boolean; method: string;
+  country: string | null; countryName: string | null; region: string | null; city: string | null;
+  timeZone: string | null; asn: string | null; lat: number | null; lon: number | null;
+  browser: string | null; os: string | null; device: string | null;
+  email?: string; // present on the admin feed
+}
 export interface AdminUser {
   id: string; email: string; fullName: string | null; phone: string | null;
   createdAt: string; householdCount: number; roles: string[];
@@ -498,6 +506,8 @@ export const api = {
   // platform admin (app operator)
   adminStats: () => req<AdminStats>("/api/admin/stats"),
   adminUsers: () => req<AdminUser[]>("/api/admin/users"),
+  adminSignins: () => req<SigninEvent[]>("/api/admin/signins"),
+  mySignins: () => req<SigninEvent[]>("/api/auth/signins"),
   adminActivity: () => req<AdminActivity[]>("/api/admin/activity"),
 
   // approval workflow

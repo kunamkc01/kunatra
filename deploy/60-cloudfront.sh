@@ -14,8 +14,13 @@ TMP=$(mktemp -d)
 
 # Managed policy IDs (global constants).
 CACHE_OPTIMIZED=658327ea-f89d-4fab-a63d-7e88639e58f6
-CACHE_DISABLED=4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+CACHE_DISABLED=4135ea2d-6df8-44a3-9df3-4b5a84be39ad   # superseded for /api/* by kunatra-api-geo
 REQ_ALLVIEWER_NOHOST=b689b0a8-53d0-40ab-baf2-68738e2966ac
+# NOTE: /api/* now uses the custom cache policy "kunatra-api-geo" (created 2026-07:
+# caching disabled + forwards CloudFront-Viewer geo headers so the API can log
+# login geography). Viewer-Address/ASN are not cache-policy-eligible; the client
+# IP arrives via X-Forwarded-For. Do NOT switch the origin request policy to one
+# that forwards Host — the Lightsail origin 404s on a foreign Host header.
 
 log "CloudFront function (URL rewrite for static routes)"
 cat > "$TMP/router.js" <<'JS'

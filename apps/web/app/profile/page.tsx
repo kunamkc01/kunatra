@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { api, getUser, setStoredUser, type User, type Member } from "@/lib/api";
+import { api, getUser, setStoredUser, type User, type Member, type SigninEvent } from "@/lib/api";
 import { useAuth } from "@/lib/useAuth";
 import { inr } from "@/lib/format";
 import { Shell } from "@/components/Shell";
@@ -41,6 +41,9 @@ export default function Profile() {
   // password
   const [cur, setCur] = useState(""); const [nw, setNw] = useState(""); const [pwMsg, setPwMsg] = useState<string | null>(null); const [pwErr, setPwErr] = useState<string | null>(null); const [pwBusy, setPwBusy] = useState(false);
 
+  // recent sign-ins (security transparency)
+  const [signins, setSignins] = useState<SigninEvent[]>([]);
+
   // household name (owner)
   const [hhName, setHhName] = useState(""); const [hhMsg, setHhMsg] = useState<string | null>(null); const [hhErr, setHhErr] = useState<string | null>(null); const [hhBusy, setHhBusy] = useState(false);
 
@@ -52,6 +55,7 @@ export default function Profile() {
   useEffect(() => {
     if (!ready) return;
     api.me().then((u) => { setMe(u); setFullName(u.fullName ?? ""); setPhone(u.phone ?? ""); setAvatar(u.avatar ?? null); }).catch(() => setMe(getUser()));
+    api.mySignins().then(setSignins).catch(() => {});
   }, [ready]);
 
   useEffect(() => {
@@ -220,6 +224,25 @@ export default function Profile() {
             {hhMsg && <span style={{ color: "var(--good)", fontSize: 12.5 }}>{hhMsg}</span>}
           </div>
         </form>
+      )}
+
+      {signins.length > 0 && (
+        <div className="panel">
+          <h3>Recent sign-ins</h3>
+          <p className="desc">Where your account has been accessed from. See something you don't recognise? Change your password below.</p>
+          {signins.slice(0, 8).map((s, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 2px", borderBottom: i < Math.min(signins.length, 8) - 1 ? "1px solid var(--line)" : "none", fontSize: 13 }}>
+              <span className={`pill ${s.success ? (s.event === "login" ? "p-good" : "p-info") : "p-bad"}`}>
+                {s.success ? s.event : "failed"}
+              </span>
+              <span style={{ flex: 1 }}>
+                {[s.city, s.region, s.countryName ?? s.country].filter(Boolean).join(", ") || "Location unknown"}
+                <span className="muted"> · {[s.browser, s.os].filter(Boolean).join(" on ") || "unknown device"}{s.device ? ` (${s.device})` : ""}</span>
+              </span>
+              <span className="meta" style={{ whiteSpace: "nowrap" }}>{new Date(s.at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+            </div>
+          ))}
+        </div>
       )}
 
       <form className="panel" onSubmit={changePassword}>

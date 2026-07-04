@@ -14,6 +14,7 @@ import * as approvals from './approvals.ts';
 import { auditMiddleware, listAudit } from './audit.ts';
 import { remindDueCompliance } from './notify.ts';
 import * as admin from './admin.ts';
+import * as access from './access.ts';
 
 export const app = express();
 // Bodies can carry downscaled images (avatars, asset photos) as data URLs, so
@@ -38,8 +39,22 @@ const h =
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
 // ---- auth (public) --------------------------------------------------------
-app.post('/api/auth/register', h(async (req, res) => res.status(201).json(await auth.register(req.body))));
-app.post('/api/auth/login', h(async (req, res) => res.json(await auth.login(req.body))));
+app.post('/api/auth/register', h(async (req, res) => {
+  const session = await auth.register(req.body);
+  void access.recordAuthEvent(req, { event: 'register', success: true, email: session.user.email, userId: session.user.id });
+  res.status(201).json(session);
+}));
+app.post('/api/auth/login', h(async (req, res) => {
+  const email = typeof req.body?.email === 'string' ? req.body.email : '';
+  try {
+    const session = await auth.login(req.body);
+    void access.recordAuthEvent(req, { event: 'login', success: true, email: session.user.email, userId: session.user.id });
+    res.json(session);
+  } catch (e) {
+    if (email) void access.recordAuthEvent(req, { event: 'login', success: false, email });
+    throw e;
+  }
+}));
 app.post('/api/auth/forgot', h(async (req, res) => res.json(await auth.requestReset(req.body))));
 app.post('/api/auth/reset', h(async (req, res) => res.json(await auth.resetWithToken(req.body))));
 
@@ -71,11 +86,19 @@ app.use((req, res, next) => {
 // Record who changed what (runs after authentication, before the handlers).
 app.use(auditMiddleware);
 
+// Access heartbeat — throttled last-seen/geo on the account (never blocks).
+app.use((req, _res, next) => { if (req.user) void access.heartbeat(req); next(); });
+
 // ---- current user, profile, household switch ------------------------------
 app.get('/api/auth/me', h(async (req, res) => res.json(await auth.me(req.user!))));
 app.patch('/api/auth/profile', h(async (req, res) => { await auth.updateProfile(req.user!.id, req.body); res.json(await auth.me(req.user!)); }));
 app.post('/api/auth/password', h(async (req, res) => res.json(await auth.changePassword(req.user!.id, req.body))));
-app.post('/api/auth/switch', h(async (req, res) => res.json(await auth.switchHousehold(req.user!.id, req.body))));
+app.post('/api/auth/switch', h(async (req, res) => {
+  const session = await auth.switchHousehold(req.user!.id, req.body);
+  void access.recordAuthEvent(req, { event: 'switch', success: true, email: req.user!.email, userId: req.user!.id });
+  res.json(session);
+}));
+app.get('/api/auth/signins', h(async (req, res) => res.json(await access.mySignins(req.user!.id))));
 // Create a new household you own (any authenticated user), and switch to it.
 app.post('/api/households', h(async (req, res) => res.status(201).json(await auth.createHousehold(req.user!.id, req.body))));
 
@@ -196,6 +219,7 @@ app.delete('/api/approvals/:id', scopeResource('approval_requests'), manageMoney
 // ---- platform admin (app operator; counts only, no household money) -------
 app.get('/api/admin/stats', auth.requireAdmin, h(async (_req, res) => res.json({ ...(await admin.platformStats()), signupsByWeek: await admin.signupsByWeek(), assetsByWeek: await admin.assetsByWeek() })));
 app.get('/api/admin/users', auth.requireAdmin, h(async (_req, res) => res.json(await admin.listAllUsers())));
+app.get('/api/admin/signins', auth.requireAdmin, h(async (_req, res) => res.json(await access.adminSignins())));
 app.get('/api/admin/activity', auth.requireAdmin, h(async (_req, res) => res.json(await admin.recentActivity())));
 
 // ---- audit trail (owner only — oversight) --------------------------------

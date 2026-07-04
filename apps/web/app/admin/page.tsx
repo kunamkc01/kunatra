@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, type AdminStats, type AdminUser, type AdminActivity } from "@/lib/api";
+import { api, type AdminStats, type AdminUser, type AdminActivity, type SigninEvent } from "@/lib/api";
 import { useAuth } from "@/lib/useAuth";
 import { Shell } from "@/components/Shell";
 
@@ -45,13 +45,14 @@ export default function Admin() {
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [activity, setActivity] = useState<AdminActivity[]>([]);
+  const [signins, setSignins] = useState<SigninEvent[]>([]);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     if (!ready) return;
     if (!user?.isAdmin) { router.replace("/"); return; }
-    Promise.all([api.adminStats(), api.adminUsers(), api.adminActivity()])
-      .then(([s, u, a]) => { setStats(s); setUsers(u); setActivity(a); })
+    Promise.all([api.adminStats(), api.adminUsers(), api.adminActivity(), api.adminSignins()])
+      .then(([s, u, a, si]) => { setStats(s); setUsers(u); setActivity(a); setSignins(si); })
       .catch((e) => setErr(e.message ?? "Could not load"));
   }, [ready, user, router]);
 
@@ -105,6 +106,28 @@ export default function Admin() {
                 <span className="meta" style={{ fontSize: 12 }}>{ago(a.at)}</span>
               </div>
             ))}
+          </div>
+        </>
+      )}
+
+      {signins.length > 0 && (
+        <>
+          <div className="sec-label">Recent sign-ins · with geography</div>
+          <div className="scroll">
+            <table>
+              <thead><tr><th>Who</th><th>Event</th><th>Where</th><th>Device</th><th>When</th></tr></thead>
+              <tbody>
+                {signins.slice(0, 20).map((s, i) => (
+                  <tr key={i}>
+                    <td style={{ fontSize: 12.5 }}>{s.email}</td>
+                    <td><span className={`pill ${s.success ? (s.event === "login" ? "p-good" : "p-info") : "p-bad"}`}>{s.success ? s.event : "failed"}</span></td>
+                    <td style={{ fontSize: 12.5 }}>{[s.city, s.region, s.country].filter(Boolean).join(", ") || "—"}{s.timeZone ? <span className="muted"> · {s.timeZone}</span> : null}</td>
+                    <td style={{ fontSize: 12.5 }}>{[s.browser, s.os].filter(Boolean).join(" / ") || "—"}{s.device ? ` · ${s.device}` : ""}</td>
+                    <td className="meta">{ago(s.at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </>
       )}
