@@ -81,6 +81,14 @@ test('net-worth history & rent-vs-market gap', { skip: hasDb ? false : 'DATABASE
       assert.equal(g.totalYearlyGap, 84000);         // the "left on the table" rollup
     });
 
+    await t.test('each estimate appends a dated history point', async () => {
+      const v = (await call('GET', `/api/assets/${assetId}/valuation`, undefined, ownerTok)).body;
+      assert.ok(Array.isArray(v.history) && v.history.length >= 1);
+      assert.equal(v.history[v.history.length - 1].estimatedValue, 9500000);
+      assert.equal(v.history[v.history.length - 1].lowValue, 8500000);
+      assert.ok(v.history[v.history.length - 1].at);
+    });
+
     await t.test('properties without rent or estimate are excluded', async () => {
       await call('POST', `/api/households/${householdId}/assets`, { name: 'Own home', assetClass: 'real_estate', value: 5000000 }, ownerTok);
       const g = (await call('GET', `/api/households/${householdId}/rent/market-gap`, undefined, ownerTok)).body;

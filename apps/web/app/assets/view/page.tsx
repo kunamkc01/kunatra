@@ -2,7 +2,7 @@
 import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
-import { api, type Asset, type AssetDetail, type Member, type PropertyValuation } from "@/lib/api";
+import { api, type Asset, type AssetDetail, type Member, type PropertyValuation, type Valuation } from "@/lib/api";
 import { inr, inrExact, assetClassLabel } from "@/lib/format";
 import { useAuth } from "@/lib/useAuth";
 import { Shell } from "@/components/Shell";
@@ -96,6 +96,9 @@ function AssetDetailView() {
           )}
         </div>
       )}
+
+      {/* value over time — your records as the line, AI estimates as dated dots */}
+      {isProperty && asset && canSeeFinancials && <ValueJourney asset={asset} />}
 
       {/* metric tiles */}
       {canSeeFinancials && m && (
@@ -294,6 +297,97 @@ function PropertyInsights({ assetId, ownValue, ownRent, canEdit, canSeeFinancial
       )}
 
       {err && <div className="err" style={{ marginTop: 6 }}>{err}</div>}
+    </div>
+  );
+}
+
+
+// ---- value over time --------------------------------------------------------
+interface JPoint { t: number; v: number; kind: "real" | "ai"; low?: number | null; high?: number | null; label?: string; }
+
+/**
+ * The property's value journey: a solid line through REAL anchors (purchase
+ * price, dated valuations you recorded, today's value) with AI estimates drawn
+ * as distinct dated dots + range whiskers. The AI dots accrue into their own
+ * trendline as estimates refresh — we never fabricate past estimates.
+ */
+function ValueJourney({ asset }: { asset: Asset }) {
+  const [vals, setVals] = useState<Valuation[] | null>(null);
+  const [ai, setAi] = useState<PropertyValuation | null>(null);
+
+  useEffect(() => {
+    api.listValuations(asset.id).then(setVals).catch(() => setVals([]));
+    api.getPropertyValuation(asset.id).then(setAi).catch(() => setAi(null));
+  }, [asset.id]);
+
+  if (vals == null) return null;
+
+  const real: JPoint[] = [];
+  if (asset.costBasis != null && asset.acquiredYear != null) {
+    real.push({ t: new Date(asset.acquiredYear, 0, 1).getTime(), v: asset.costBasis, kind: "real", label: asset.acquiredHow ?? "acquired" });
+  }
+  for (const v of vals) real.push({ t: new Date(`${v.asOf}T00:00:00`).getTime(), v: v.value, kind: "real" });
+  real.push({ t: Date.now(), v: asset.value, kind: "real", label: "today" });
+  // dedupe near-identical points (the latest valuation IS the current value)
+  const realPts = real
+    .sort((a, b) => a.t - b.t)
+    .filter((p, i, arr) => i === 0 || Math.abs(p.t - arr[i - 1].t) > 86400000 * 20 || p.v !== arr[i - 1].v);
+
+  const aiPts: JPoint[] = (ai?.history ?? []).map((h) => ({
+    t: new Date(h.at).getTime(), v: h.estimatedValue, kind: "ai", low: h.lowValue, high: h.highValue,
+  }));
+
+  if (realPts.length + aiPts.length < 2) return null;
+
+  const all = [...realPts, ...aiPts];
+  const W = 720, H = 170, PAD = { l: 8, r: 8, t: 18, b: 24 };
+  const t0 = Math.min(...all.map((p) => p.t)), t1 = Math.max(...all.map((p) => p.t));
+  const lo = Math.min(...all.map((p) => p.low ?? p.v)), hi = Math.max(...all.map((p) => p.high ?? p.v));
+  const tSpan = t1 - t0 || 1, vSpan = hi - lo || Math.abs(hi) || 1;
+  const x = (t: number) => PAD.l + ((t - t0) / tSpan) * (W - PAD.l - PAD.r);
+  const y = (v: number) => PAD.t + (1 - (v - lo) / vSpan) * (H - PAD.t - PAD.b);
+  const line = realPts.map((p) => `${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
+  const yearLabels = Array.from(new Set([t0, t0 + tSpan / 2, t1].map((t) => new Date(t).getFullYear())));
+
+  return (
+    <div className="panel" style={{ marginBottom: 14 }}>
+      <div className="sec-label" style={{ marginTop: 0, marginBottom: 4 }}>
+        Value over time
+        <span className="meta" style={{ display: "flex", gap: 12 }}>
+          <span><span style={{ color: "var(--navy)" }}>●</span> your records</span>
+          {aiPts.length > 0 && <span><span style={{ color: "var(--seal)" }}>●</span> AI estimate</span>}
+        </span>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }} role="img" aria-label="Property value over time">
+        {realPts.length >= 2 && <polyline points={line} fill="none" stroke="var(--navy)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />}
+        {aiPts.map((p, i) => (
+          <g key={`ai${i}`}>
+            {p.low != null && p.high != null && (
+              <line x1={x(p.t)} y1={y(p.low)} x2={x(p.t)} y2={y(p.high)} stroke="var(--seal)" strokeWidth="2" opacity="0.45" />
+            )}
+            <circle cx={x(p.t)} cy={y(p.v)} r="4" fill="var(--seal)" />
+          </g>
+        ))}
+        {realPts.map((p, i) => (
+          <g key={`r${i}`}>
+            <circle cx={x(p.t)} cy={y(p.v)} r={i === realPts.length - 1 ? 4 : 3} fill="var(--navy)" />
+            {p.label && (
+              <text x={x(p.t)} y={y(p.v) - 8} textAnchor={i === 0 ? "start" : "end"} fontSize="10.5" fill="var(--slate)">
+                {p.label} {inr(p.v)}
+              </text>
+            )}
+          </g>
+        ))}
+        {yearLabels.map((yr, i) => (
+          <text key={yr} x={i === 0 ? PAD.l : i === yearLabels.length - 1 ? W - PAD.r : W / 2} y={H - 6}
+            textAnchor={i === 0 ? "start" : i === yearLabels.length - 1 ? "end" : "middle"} fontSize="10.5" fill="var(--muted)">{yr}</text>
+        ))}
+      </svg>
+      {aiPts.length > 0 && (
+        <div className="hint" style={{ marginTop: 4 }}>
+          AI estimates are informational dots with their low–high range — they accrue into a trendline as estimates refresh (every ~90 days). We never back-fill estimates for past months.
+        </div>
+      )}
     </div>
   );
 }

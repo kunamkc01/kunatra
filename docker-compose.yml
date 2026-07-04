@@ -31,6 +31,7 @@ services:
       - ./apps/api/db/person_income.sql:/docker-entrypoint-initdb.d/18-person_income.sql:ro
       - ./apps/api/db/valuation.sql:/docker-entrypoint-initdb.d/19-valuation.sql:ro
       - ./apps/api/db/history.sql:/docker-entrypoint-initdb.d/20-history.sql:ro
+      - ./apps/api/db/valuation_history.sql:/docker-entrypoint-initdb.d/21-valuation_history.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U kunatra -d kunatra"]
       interval: 3s

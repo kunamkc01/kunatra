@@ -164,6 +164,14 @@ async function processValuation(assetId: string): Promise<void> {
        est.rentalYieldPct, est.annualGrowthPct, est.confidence, est.summary, JSON.stringify(est.reasons),
        MODEL_ID, PROMPT_VERSION]
     );
+    // Every estimate is also a dated point — over refreshes this is the trendline.
+    await db().query(
+      `INSERT INTO valuation_history (asset_id, household_id, generated_at, estimated_value_paise, low_paise, high_paise, estimated_rent_paise, confidence, provider, prompt_version)
+       VALUES ($1, $2, now(), $3, $4, $5, $6, $7, $8, $9)`,
+      [assetId, loaded.householdId, rupeesToPaise(est.estimatedValue), rupeesToPaise(est.lowValue), rupeesToPaise(est.highValue),
+       est.estimatedMonthlyRent != null ? rupeesToPaise(est.estimatedMonthlyRent) : null,
+       est.confidence, MODEL_ID, PROMPT_VERSION]
+    );
   } catch (e: any) {
     console.error(`[valuation] ${assetId} failed: ${e?.message}`);
     await db().query(`UPDATE property_valuations SET status = 'unavailable', updated_at = now() WHERE asset_id = $1`, [assetId]).catch(() => {});
@@ -215,7 +223,18 @@ const valuationRow = (r: any) => ({
 
 export async function getValuation(assetId: string) {
   const { rows } = await db().query(`SELECT * FROM property_valuations WHERE asset_id = $1`, [assetId]);
-  return rows[0] ? valuationRow(rows[0]) : null;
+  if (!rows[0]) return null;
+  const out: any = valuationRow(rows[0]);
+  const h = await db().query(
+    `SELECT generated_at, estimated_value_paise, low_paise, high_paise FROM valuation_history
+      WHERE asset_id = $1 ORDER BY generated_at LIMIT 48`, [assetId]);
+  out.history = h.rows.map((r) => ({
+    at: r.generated_at,
+    estimatedValue: paiseToRupees(r.estimated_value_paise),
+    lowValue: r.low_paise != null ? paiseToRupees(r.low_paise) : null,
+    highValue: r.high_paise != null ? paiseToRupees(r.high_paise) : null,
+  }));
+  return out;
 }
 
 /** User-requested refresh — at most ~once a day per property. */

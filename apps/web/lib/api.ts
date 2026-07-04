@@ -64,6 +64,7 @@ export interface PropertyValuation {
   feedback: "too_low" | "accurate" | "too_high" | null;
   userValue: number | null;
   generatedAt: string | null;
+  history?: { at: string; estimatedValue: number; lowValue: number | null; highValue: number | null }[];
 }
 
 export interface Member {
