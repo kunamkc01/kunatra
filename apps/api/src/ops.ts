@@ -106,6 +106,7 @@ const woRow = (r: any) => ({
   assetName: r.asset_name ?? null, vendorName: r.vendor_name ?? null,
   title: r.title, category: r.category, status: r.status, recurrence: r.recurrence,
   recurrenceMode: r.recurrence_mode ?? 'on_completion', seriesId: r.series_id ?? null,
+  tenantRaised: r.tenant_id != null,
   scheduledFor: r.scheduled_for ?? null,
   estimatedCost: r.estimated_cost_paise != null ? paiseToRupees(r.estimated_cost_paise) : null,
   actualCost: r.actual_cost_paise != null ? paiseToRupees(r.actual_cost_paise) : null,

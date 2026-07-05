@@ -15,17 +15,19 @@ import { auditMiddleware, listAudit } from './audit.ts';
 import { remindDueCompliance } from './notify.ts';
 import * as admin from './admin.ts';
 import * as access from './access.ts';
+import * as documents from './documents.ts';
+import * as tenant from './tenant.ts';
 
 export const app = express();
 // Bodies can carry downscaled images (avatars, asset photos) as data URLs, so
 // allow well above the per-photo cap enforced in repo.ts (~2.5MB).
-app.use(express.json({ limit: '8mb' }));
+app.use(express.json({ limit: '16mb' })); // documents ≤10MB arrive base64-inflated
 
 // Permissive CORS for local development (Next.js dev server on :3000).
 app.use((_req, res, next) => {
   res.header('Access-Control-Allow-Origin', process.env.CORS_ORIGIN ?? '*');
   res.header('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type,Authorization');
+  res.header('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Tenant-Token');
   if (_req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
@@ -63,9 +65,24 @@ app.get('/api/assessment', h(async (_req, res) => res.json(assess(salariedSample
 
 // Everything else under /api requires a valid session.
 app.use((req, res, next) => {
-  if (req.method === 'OPTIONS' || !req.path.startsWith('/api/')) return next();
+  if (req.method === 'OPTIONS' || !req.path.startsWith('/api/') || req.path.startsWith('/api/tenant/')) return next();
   return auth.authenticate(req, res, next);
 });
+
+// ---- tenant portal (magic-link auth; scoped to ONE property, rate-limited) --
+app.use('/api/tenant', tenant.tenantAuth);
+app.get('/api/tenant/me', h(async (req, res) => res.json(await tenant.tenantMe(req.tenant!))));
+app.get('/api/tenant/requests', h(async (req, res) => res.json(await tenant.tenantRequests(req.tenant!))));
+app.post('/api/tenant/requests', h(async (req, res) => res.status(201).json(await tenant.raiseRequest(req.tenant!, req.body))));
+app.get('/api/tenant/receipts', h(async (req, res) => res.json(await tenant.tenantReceipts(req.tenant!))));
+app.get('/api/tenant/receipts/:id', h(async (req, res) => res.json(await tenant.tenantReceipt(req.tenant!, req.params.id))));
+app.get('/api/tenant/documents', h(async (req, res) => res.json(await tenant.tenantDocuments(req.tenant!))));
+app.get('/api/tenant/documents/:id/download', h(async (req, res) => {
+  const f = await tenant.tenantDocumentFile(req.tenant!, req.params.id);
+  res.setHeader('Content-Type', f.contentType);
+  res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(f.filename)}"`);
+  res.send(f.buffer);
+}));
 
 const { requireRole, sameHousehold, scopeResource, scopeVia, scopeOwned, scopeOwnedVia, forceMemberOwnership, memberSelfOnly } = auth;
 const ownerOnly = requireRole('owner');                                   // account/team decisions
@@ -147,6 +164,27 @@ app.delete('/api/assets/:id', requireRole('owner', 'manager', 'member'), scopeOw
 app.get('/api/assets/:id/valuations', scopeResource('assets'), h(async (req, res) => res.json(await repo.listValuations(req.params.id))));
 app.post('/api/assets/:id/valuations', editOps, scopeResource('assets'), h(async (req, res) => res.status(201).json(await repo.addValuation(req.params.id, req.body))));
 app.delete('/api/valuations/:id', editOps, scopeVia('SELECT a.household_id FROM valuations v JOIN assets a ON a.id = v.asset_id WHERE v.id = $1'), h(async (req, res) => { await repo.deleteValuation(req.params.id); res.sendStatus(204); }));
+// ---- tenant management (owner/manager invite + revoke, per property) ------
+app.get('/api/assets/:id/tenant', scopeResource('assets'), manageMoney, h(async (req, res) => res.json(await tenant.getTenant(req.params.id))));
+app.post('/api/assets/:id/tenant', scopeResource('assets'), manageMoney, h(async (req, res) => res.status(201).json(await tenant.setTenant(req.params.id, req.body))));
+app.delete('/api/assets/:id/tenant', scopeResource('assets'), manageMoney, h(async (req, res) => res.json(await tenant.revokeTenant(req.params.id))));
+
+// ---- document vault (agreements, bills, receipts — private S3) ------------
+app.post('/api/assets/:id/documents', editAssets, scopeOwned('assets'), h(async (req, res) =>
+  res.status(201).json(await documents.uploadDocument(req.params.id, req.body, req.user!.email))));
+app.get('/api/assets/:id/documents', scopeResource('assets'), h(async (req, res) => res.json(await documents.listAssetDocuments(req.params.id))));
+app.get('/api/work-orders/:id/documents', scopeResource('work_orders'), h(async (req, res) => res.json(await documents.listWorkOrderDocuments(req.params.id))));
+app.get('/api/documents/:id/download', scopeVia('SELECT household_id FROM documents WHERE id = $1'), h(async (req, res) => {
+  const f = await documents.getDocumentFile(req.params.id);
+  res.setHeader('Content-Type', f.contentType);
+  res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(f.filename)}"`);
+  res.send(f.buffer);
+}));
+app.delete('/api/documents/:id', editAssets, scopeOwnedVia('SELECT d.household_id, a.member_id FROM documents d LEFT JOIN assets a ON a.id = d.asset_id WHERE d.id = $1'), h(async (req, res) => {
+  await documents.deleteDocument(req.params.id);
+  res.sendStatus(204);
+}));
+
 // ---- asset photos (member can manage their own asset's pictures) ----------
 app.get('/api/assets/:id/photos', scopeResource('assets'), h(async (req, res) => res.json(await repo.listPhotos(req.params.id))));
 app.post('/api/assets/:id/photos', editAssets, scopeOwned('assets'), h(async (req, res) => res.status(201).json(await repo.addPhoto(req.params.id, req.body))));
@@ -186,6 +224,9 @@ app.get('/api/households/:id/operations/summary', sameHousehold, h(async (req, r
 app.get('/api/households/:id/rent', sameHousehold, h(async (req, res) => res.json(await rent.listRentCollections(req.params.id))));
 app.get('/api/households/:id/rent/summary', sameHousehold, h(async (req, res) => res.json(await rent.rentSummary(req.params.id))));
 app.get('/api/households/:id/rent/market-gap', sameHousehold, h(async (req, res) => res.json(await rent.rentMarketGap(req.params.id))));
+app.get('/api/rent/:id/receipt', scopeResource('rent_collections'), h(async (req, res) => res.json(await rent.rentReceipt(req.params.id))));
+app.post('/api/rent/:id/receipt/save', scopeResource('rent_collections'), editOps, h(async (req, res) => res.status(201).json(await rent.saveReceiptToVault(req.params.id))));
+app.get('/api/assets/:id/receipts', scopeResource('assets'), h(async (req, res) => res.json(await rent.receiptsForYear(req.params.id, Number(req.query.fy)))));
 app.post('/api/rent/:id/collect', scopeResource('rent_collections'), editOps, h(async (req, res) => res.json(await rent.collectRent(req.params.id, req.body))));
 app.patch('/api/rent/:id', scopeResource('rent_collections'), editOps, h(async (req, res) => res.json(await rent.updateRent(req.params.id, req.body))));
 

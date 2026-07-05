@@ -32,7 +32,8 @@ cat > "$TMP/containers.json" <<JSON
       "NOTIFY_ACCESS_KEY_ID": "${NOTIFY_ACCESS_KEY_ID:-}",
       "NOTIFY_SECRET_ACCESS_KEY": "${NOTIFY_SECRET_ACCESS_KEY:-}",
       "ADMIN_EMAILS": "${ADMIN_EMAILS:-}",
-      "BEDROCK_MODEL_ID": "${BEDROCK_MODEL_ID:-us.anthropic.claude-haiku-4-5-20251001-v1:0}"
+      "BEDROCK_MODEL_ID": "${BEDROCK_MODEL_ID:-us.amazon.nova-pro-v1:0}",
+      "DOCS_BUCKET": "${DOCS_BUCKET:-}"
     }
   }
 }

@@ -182,6 +182,7 @@ const assetRow = (r: any) => ({
   monthlyContribution: r.monthly_contribution_paise != null ? paiseToRupees(r.monthly_contribution_paise) : null,
   monthlyRent: r.monthly_rent_paise != null ? paiseToRupees(r.monthly_rent_paise) : null,
   rentTds: r.monthly_rent_tds_paise != null ? paiseToRupees(r.monthly_rent_tds_paise) : null,
+  tenantName: r.tenant_name ?? null,
   acquiredHow: r.acquired_how ?? null,
   acquiredYear: r.acquired_year ?? null,
   realEstate: r.address != null || r.ptin != null || r.sqft != null || r.city != null || r.property_type != null
@@ -255,8 +256,8 @@ export async function createAsset(householdId: string, body: any) {
   try {
     await client.query('BEGIN');
     const { rows } = await client.query(
-      `INSERT INTO assets (household_id, name, asset_class, current_value_paise, liquid, cost_basis_paise, monthly_contribution_paise, member_id, monthly_rent_paise, acquired_how, acquired_year, monthly_rent_tds_paise)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
+      `INSERT INTO assets (household_id, name, asset_class, current_value_paise, liquid, cost_basis_paise, monthly_contribution_paise, member_id, monthly_rent_paise, acquired_how, acquired_year, monthly_rent_tds_paise, tenant_name)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
       [householdId, name, cls, rupeesToPaise(value), liquid,
        costBasis != null ? rupeesToPaise(costBasis) : null,
        monthly != null ? rupeesToPaise(monthly) : null,
@@ -264,7 +265,8 @@ export async function createAsset(householdId: string, body: any) {
        rent != null ? rupeesToPaise(rent) : null,
        str(body.acquiredHow, 'acquiredHow') ?? null,
        year(body.acquiredYear, 'acquiredYear'),
-       rentTds != null ? rupeesToPaise(rentTds) : null]
+       rentTds != null ? rupeesToPaise(rentTds) : null,
+       str(body.tenantName, 'tenantName') ?? null]
     );
     const id = rows[0].id;
     if (cls === 'real_estate' && body.realEstate) await upsertRealEstate(client, id, body.realEstate);
@@ -293,6 +295,7 @@ export async function updateAsset(id: string, body: any) {
   if ('memberId' in body) push('member_id', str(body.memberId, 'memberId') ?? null);
   if ('monthlyRent' in body) { const m = money(body.monthlyRent, 'monthlyRent'); push('monthly_rent_paise', m != null ? rupeesToPaise(m) : null); }
   if ('rentTds' in body) { const m = money(body.rentTds, 'rentTds'); push('monthly_rent_tds_paise', m != null ? rupeesToPaise(m) : null); }
+  if ('tenantName' in body) push('tenant_name', str(body.tenantName, 'tenantName') ?? null);
   if ('acquiredHow' in body) push('acquired_how', str(body.acquiredHow, 'acquiredHow') ?? null);
   if ('acquiredYear' in body) push('acquired_year', year(body.acquiredYear, 'acquiredYear'));
 
