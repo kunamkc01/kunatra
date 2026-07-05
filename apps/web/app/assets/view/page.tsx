@@ -7,6 +7,8 @@ import { inr, inrExact, assetClassLabel } from "@/lib/format";
 import { useAuth } from "@/lib/useAuth";
 import { Shell } from "@/components/Shell";
 import { AssetSheet, PhotoGallery, ValueHistory, ContributionLedger } from "@/components/AssetSheet";
+import { DocumentsPanel } from "@/components/DocumentsPanel";
+import { TenantPanel } from "@/components/TenantPanel";
 
 const pct = (v: number | null | undefined, dp = 1) => (v == null ? "—" : `${v.toFixed(dp)}%`);
 
@@ -158,6 +160,14 @@ function AssetDetailView() {
 
       {/* photos — everyone in the household can view; managing is server-scoped */}
       {asset && canManagePhotos && <PhotoGallery assetId={asset.id} />}
+
+      {/* the vault — paperwork lives with the property */}
+      {asset && <DocumentsPanel assetId={asset.id} canEdit={canEdit} />}
+
+      {/* tenant portal access (rented properties; money managers only) */}
+      {asset && isProperty && (asset.monthlyRent ?? 0) > 0 && (role === "owner" || role === "manager") && (
+        <TenantPanel assetId={asset.id} />
+      )}
 
       {/* value history + contributions (financial) */}
       {canSeeFinancials && asset && <ValueHistory assetId={asset.id} onChanged={load} />}

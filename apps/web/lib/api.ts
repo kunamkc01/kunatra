@@ -100,6 +100,7 @@ export interface Asset {
   rentTds: number | null;
   acquiredHow: string | null;
   acquiredYear: number | null;
+  tenantName?: string | null;
   realEstate: RealEstate | null;
 }
 
@@ -203,6 +204,28 @@ export interface RentCollection {
 
 export interface RentSummary { outstandingCount: number; outstanding: number; overdueCount: number; }
 
+export type DocKind = "agreement" | "maintenance_bill" | "invoice" | "sale_deed" | "title_deed"
+  | "encumbrance_certificate" | "allotment_letter" | "occupancy_certificate" | "tax_receipt" | "insurance" | "loan_schedule" | "other";
+
+export interface VaultDocument {
+  id: string; assetId: string | null; workOrderId: string | null;
+  kind: DocKind; filename: string; size: number | null; contentType: string | null;
+  uploadedBy: string | null; uploadedAt: string;
+}
+
+export interface ReceiptData {
+  rentId: string; assetId: string;
+  landlordName: string | null; tenantName: string | null;
+  propertyName: string; propertyAddress: string | null;
+  periodMonth: string; amountDue: number; tds: number; netDue: number;
+  collectedOn: string | null; collected: number | null; status: string; householdName: string;
+}
+
+export interface TenantInfo {
+  id: string; assetId: string; name: string; email: string | null; phone: string | null;
+  revoked: boolean; createdAt: string; link: string;
+}
+
 export interface NetWorthPoint {
   month: string; // YYYY-MM-01
   netWorth: number; grossAssets: number; totalDebt: number; liquid: number;
@@ -240,6 +263,7 @@ export interface WorkOrder {
   recurrence: Recurrence;
   recurrenceMode: RecurrenceMode;
   seriesId?: string | null;
+  tenantRaised?: boolean;
   scheduledFor: string | null;
   estimatedCost: number | null;
   actualCost: number | null;
@@ -369,6 +393,19 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
+/** Authenticated binary download (documents) — returns a Blob. */
+async function reqBlob(path: string, extra: Record<string, string> = {}): Promise<{ blob: Blob; filename: string }> {
+  const token = getToken();
+  const res = await fetch(`${BASE}${path}`, {
+    headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), ...extra },
+    cache: "no-store",
+  });
+  if (!res.ok) throw new ApiError(res.status, "download_failed", `Download failed (${res.status})`);
+  const cd = res.headers.get("content-disposition") ?? "";
+  const m = cd.match(/filename="?([^";]+)"?/);
+  return { blob: await res.blob(), filename: m ? decodeURIComponent(m[1]) : "document" };
+}
+
 export const api = {
   // auth
   register: (b: { email: string; password: string; fullName?: string; householdName?: string; monthlyTakeHome?: number; monthlyEssential?: number }) =>
@@ -486,6 +523,25 @@ export const api = {
   listRent: (id: string) => req<RentCollection[]>(`/api/households/${id}/rent`),
   rentMarketGap: (id: string) => req<RentGap>(`/api/households/${id}/rent/market-gap`),
   rentSummary: (id: string) => req<RentSummary>(`/api/households/${id}/rent/summary`),
+  // document vault
+  uploadDocument: (assetId: string, b: { name: string; kind: DocKind; dataUrl: string; workOrderId?: string }) =>
+    req<VaultDocument>(`/api/assets/${assetId}/documents`, { method: "POST", body: JSON.stringify(b) }),
+  listAssetDocuments: (assetId: string) => req<VaultDocument[]>(`/api/assets/${assetId}/documents`),
+  listWorkOrderDocuments: (woId: string) => req<VaultDocument[]>(`/api/work-orders/${woId}/documents`),
+  downloadDocument: (docId: string) => reqBlob(`/api/documents/${docId}/download`),
+  deleteDocument: (docId: string) => req<void>(`/api/documents/${docId}`, { method: "DELETE" }),
+
+  // rent receipts
+  rentReceipt: (rentId: string) => req<ReceiptData>(`/api/rent/${rentId}/receipt`),
+  saveReceiptToVault: (rentId: string) => req<VaultDocument>(`/api/rent/${rentId}/receipt/save`, { method: "POST" }),
+  receiptsForYear: (assetId: string, fy: number) => req<ReceiptData[]>(`/api/assets/${assetId}/receipts?fy=${fy}`),
+
+  // tenant management (owner side)
+  getTenant: (assetId: string) => req<TenantInfo | null>(`/api/assets/${assetId}/tenant`),
+  setTenant: (assetId: string, b: { name: string; email?: string; phone?: string }) =>
+    req<TenantInfo>(`/api/assets/${assetId}/tenant`, { method: "POST", body: JSON.stringify(b) }),
+  revokeTenant: (assetId: string) => req<{ ok: boolean }>(`/api/assets/${assetId}/tenant`, { method: "DELETE" }),
+
   collectRent: (rentId: string, b: { on?: string; amount?: number }) =>
     req<RentCollection>(`/api/rent/${rentId}/collect`, { method: "POST", body: JSON.stringify(b) }),
   updateRent: (rentId: string, b: { status: "due" | "collected" | "waived"; note?: string }) =>

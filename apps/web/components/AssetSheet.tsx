@@ -84,6 +84,7 @@ export function AssetSheet({
     existing ? ((existing.monthlyRent ?? 0) > 0 ? "rented" : "live_in") : presetRented ? "rented" : "live_in");
   const [rent, setRent] = useState(existing?.monthlyRent != null ? String(existing.monthlyRent) : "");
   const [rentTds, setRentTds] = useState(existing?.rentTds != null ? String(existing.rentTds) : "");
+  const [tenantName, setTenantName] = useState(existing?.tenantName ?? "");
 
   // Property specifics.
   const re = existing?.realEstate;
@@ -139,6 +140,7 @@ export function AssetSheet({
       monthlyContribution: group === "recurring" ? (monthlyAmt ?? null) : null,
       monthlyRent: group === "property" && usage === "rented" ? (rent ? Number(rent) : null) : null,
       rentTds: group === "property" && usage === "rented" ? (rentTds ? Number(rentTds) : null) : null,
+      tenantName: group === "property" && usage === "rented" ? (tenantName.trim() || null) : null,
       ...(group === "property"
         ? { realEstate: {
               address, sqft: sqft ? Number(sqft) : null, undividedShare, ptin,
@@ -235,7 +237,9 @@ export function AssetSheet({
                   <label>TDS on rent (₹/month)</label>
                   <input inputMode="numeric" value={rentTds} onChange={(e) => setRentTds(e.target.value)} placeholder="tax withheld" />
                 </div>
-                <div className="field" style={{ display: "flex", alignItems: "flex-end" }}>
+                <div className="field">
+                  <label>Tenant name</label>
+                  <input value={tenantName} onChange={(e) => setTenantName(e.target.value)} placeholder="for rent receipts" />
                   <div className="hint">Net rent {rent ? inr(Number(rent) - (rentTds ? Number(rentTds) : 0)) : "—"}/mo · drives income & DSCR</div>
                 </div>
               </div>

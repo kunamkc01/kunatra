@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   api, getUser,
@@ -86,6 +86,9 @@ export default function Operations() {
         const cost = Number(entered);
         if (!Number.isFinite(cost) || cost < 0) { alert("Enter a valid amount."); return; }
         await api.updateWorkOrder(wo.id, { status: "done", actualCost: cost });
+        if (wo.assetId && confirm("Attach the bill or receipt for this job? It files into the property's documents.")) {
+          setBillFor(wo); billRef.current?.click();
+        }
       } else {
         await api.updateWorkOrder(wo.id, { status });
       }
@@ -104,6 +107,23 @@ export default function Operations() {
     try { await api.updateRent(rc.id, { status: "due" }); refresh(); }
     catch (e: any) { alert(e.message ?? "Could not update"); }
   }
+  // Attach the bill at the moment the job completes — that's how bills collate.
+  const [billFor, setBillFor] = useState<WorkOrder | null>(null);
+  const billRef = useRef<HTMLInputElement>(null);
+  async function onBillPick(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    const wo = billFor;
+    setBillFor(null);
+    if (!f || !wo?.assetId) return;
+    if (f.size > 10 * 1024 * 1024) { alert("Documents are capped at 10MB."); return; }
+    try {
+      const dataUrl: string = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result as string); r.onerror = rej; r.readAsDataURL(f); });
+      await api.uploadDocument(wo.assetId, { name: f.name, kind: "maintenance_bill", dataUrl, workOrderId: wo.id });
+      alert("Bill filed into the property's documents ✓");
+    } catch (e: any) { alert(e.message ?? "Could not upload the bill"); }
+    finally { if (billRef.current) billRef.current.value = ""; }
+  }
+
   async function removeVendor(v: Vendor) { if (confirm(`Delete vendor "${v.name}"?`)) { await api.deleteVendor(v.id); refresh(); } }
   async function removeInspection(i: Inspection) { if (confirm(`Delete this inspection?`)) { await api.deleteInspection(i.id); refresh(); } }
   async function completeCompliance(c: ComplianceItem) {
@@ -166,6 +186,7 @@ export default function Operations() {
             <div className="row-item" key={w.id}>
               <div className="h">
                 <span className="t">{w.title}</span>
+                {w.tenantRaised && <span className="pill p-acc">tenant</span>}
                 <span className={`pill ${WO_PILL[w.status]}`}>{w.status.replace("_", " ")}</span>
               </div>
               <div className="meta">
@@ -228,7 +249,10 @@ export default function Operations() {
                 {!readOnly && <div className="acts">
                   {rc.status !== "collected"
                     ? <button className="btn small primary" onClick={() => collectRent(rc)}>Mark collected</button>
-                    : <button className="btn ghost small" onClick={() => undoRent(rc)}>Undo</button>}
+                    : <>
+                        <Link className="btn ghost small" href={`/receipts/view?id=${rc.id}`} style={{ textDecoration: "none" }}>Receipt</Link>
+                        <button className="btn ghost small" onClick={() => undoRent(rc)}>Undo</button>
+                      </>}
                 </div>}
               </div>
             );
@@ -329,6 +353,7 @@ export default function Operations() {
         </>
       )}
 
+      <input ref={billRef} type="file" accept="application/pdf,image/*" style={{ display: "none" }} onChange={onBillPick} />
       {woSheet.open && hhId && (
         <WorkOrderSheet householdId={hhId} existing={woSheet.edit} assets={assets} vendors={vendors} onClose={() => setWoSheet({ open: false })} onSaved={() => { setWoSheet({ open: false }); refresh(); }} />
       )}
