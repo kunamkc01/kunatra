@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { api, type Asset, type AssetClass, type Loan, type Household, type Member } from "@/lib/api";
+import { api, type Asset, type AssetClass, type Loan, type Household, type Member, type PropertyPulse } from "@/lib/api";
 import { useAuth } from "@/lib/useAuth";
 import { inr, assetClassLabel } from "@/lib/format";
 import { Shell } from "@/components/Shell";
@@ -23,6 +23,7 @@ export default function Assets() {
   const [loans, setLoans] = useState<Loan[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [err, setErr] = useState<string | null>(null);
+  const [pulses, setPulses] = useState<Record<string, PropertyPulse>>({});
 
   const [assetSheet, setAssetSheet] = useState<{ open: boolean; edit?: Asset | null; presetClass?: AssetClass; presetRented?: boolean }>({ open: false });
   const [loanSheet, setLoanSheet] = useState<{ open: boolean; edit?: Loan | null }>({ open: false });
@@ -34,6 +35,7 @@ export default function Assets() {
     try {
       const [hh, a, m] = await Promise.all([api.getHousehold(id), api.listAssets(id), api.listMembers(id)]);
       setHousehold(hh); setAssets(a); setMembers(m);
+      api.propertyPulse(id).then((ps) => setPulses(Object.fromEntries(ps.map((p) => [p.assetId, p])))).catch(() => {});
       // Loans are visible to owners + advisors (the API forbids them for operations).
       setLoans(financials ? await api.listLoans(id) : []);
     } catch (e: any) {
@@ -57,7 +59,6 @@ export default function Assets() {
   }
 
   const securedFor = (assetId: string) => loans.filter((l) => l.securedAssetId === assetId).reduce((s, l) => s + l.outstanding, 0);
-  const gross = assets.reduce((s, a) => s + a.value, 0);
   const totalEmi = loans.reduce((s, l) => s + l.emiMonthly, 0);
   // Income: net salary (members, else household take-home) + net rent.
   const memberNet = members.reduce((s, m) => s + (m.monthlyNet ?? 0), 0);
@@ -75,6 +76,15 @@ export default function Assets() {
   // Top-level assets vs nested components (parent_asset_id).
   const topLevel = assets.filter((a) => !a.parentAssetId);
   const childrenOf = (id: string) => assets.filter((a) => a.parentAssetId === id);
+  const properties = topLevel.filter((a) => a.assetClass === "real_estate");
+  const others = topLevel.filter((a) => a.assetClass !== "real_estate");
+  const propTotal = properties.reduce((s, a) => s + a.value, 0);
+  const liquidTotal = others.reduce((s, a) => s + (a.liquid ? a.value : 0), 0);
+  const rentedProps = properties.filter((a) => (a.monthlyRent ?? 0) > 0);
+  const needsYou = properties.filter((a) => {
+    const p = pulses[a.id];
+    return p ? p.rentStatus === "due" || p.openRequests > 0 : false;
+  }).length;
 
   if (!ready) return <Shell><div /></Shell>;
   if (!hhId) {
@@ -85,31 +95,21 @@ export default function Assets() {
     );
   }
 
-  const cols = canSeeFinancials ? 6 : 3;
-  const renderAssetRow = (a: Asset, nested = false) => {
+  // Compact row for the non-property "everything else" table.
+  const renderOtherRow = (a: Asset, nested = false) => {
     const loan = securedFor(a.id);
-    const equity = a.value - loan;
-    const ltv = a.value > 0 && loan > 0 ? (loan / a.value) * 100 : null;
     return (
       <tr key={a.id} style={nested ? { background: "var(--tint)" } : undefined}>
         <td style={{ paddingLeft: nested ? 26 : 8 }}>
           {nested && <span className="muted">↳ </span>}
           <Link href={`/assets/view?id=${a.id}`} className="asset-link" style={{ fontWeight: 500 }}>{a.name}</Link>
-          <div style={{ fontSize: 11, color: "var(--muted)" }}>{assetClassLabel(a.assetClass)}{a.acquiredHow && a.acquiredYear ? ` · ${a.acquiredHow} ${a.acquiredYear}` : ""}{a.liquid ? " · liquid" : ""}{a.memberId ? ` · ${memberName(a.memberId) ?? "member"}` : ""}{a.realEstate?.address ? ` · ${a.realEstate.address}` : ""}</div>
+          <div style={{ fontSize: 11, color: "var(--muted)" }}>{assetClassLabel(a.assetClass)}{a.acquiredHow && a.acquiredYear ? ` · ${a.acquiredHow} ${a.acquiredYear}` : ""}{a.memberId ? ` · ${memberName(a.memberId) ?? "member"}` : ""}</div>
         </td>
         <td className="tnum">{inr(a.value)}</td>
-        {canSeeFinancials && <td className="tnum" style={{ color: loan > 0 ? "var(--bad)" : "var(--muted)" }}>{loan > 0 ? inr(loan) : "—"}</td>}
-        {canSeeFinancials && <td className="tnum">{inr(equity)}</td>}
-        {canSeeFinancials && (
-          <td className="tnum" style={{ color: ltv != null ? (ltv >= 80 ? "var(--bad)" : ltv >= 60 ? "var(--warn)" : "var(--ink)") : "var(--muted)" }}>
-            {ltv != null ? `${ltv.toFixed(0)}%` : "owned"}
-          </td>
-        )}
-        <td style={{ whiteSpace: "nowrap" }}>
-          {canEditAssets && a.assetClass === "real_estate" && !(a.realEstate?.city && a.realEstate?.sqft) && !nested && (
-            <button className="pill p-warn chip-btn" title="City, locality and size unlock the free AI value estimate"
-              onClick={() => setAssetSheet({ open: true, edit: a })}>+ size &amp; locality → value estimate</button>
-          )}
+        {canSeeFinancials && <td style={{ whiteSpace: "nowrap", fontSize: 11.5 }}>
+          {loan > 0 ? <span style={{ color: "var(--bad)" }}>loan {inr(loan)}</span> : <span className="pill p-muted">{a.liquid ? "liquid" : "owned"}</span>}
+        </td>}
+        <td style={{ whiteSpace: "nowrap", textAlign: "right" }}>
           {canEditAssets && <button className="btn ghost small" onClick={() => setAssetSheet({ open: true, edit: a })}>Edit</button>}
           {(canManageMoney || (role === "member" && a.memberId === user?.memberId)) && <button className="btn ghost small danger" onClick={() => removeAsset(a)}>Delete</button>}
           {!canEditAssets && <span className="muted" style={{ fontSize: 12 }}>view</span>}
@@ -135,54 +135,74 @@ export default function Assets() {
 
       {err && <div className="strip bad">{err}</div>}
 
-      {canSeeFinancials && (
+      {topLevel.length === 0 && (
+        canEditAssets ? (
+          <div style={{ padding: "6px 2px 4px" }}>
+            <div style={{ fontWeight: 600, marginBottom: 2 }}>What do you own? Start with one:</div>
+            <div className="starters">
+              {([
+                { ic: "🏠", t: "Home I live in", s: "house or flat", c: "real_estate" as AssetClass },
+                { ic: "🏢", t: "Property I rent out", s: "earns rent", c: "real_estate" as AssetClass, rented: true },
+                { ic: "📈", t: "Mutual funds / SIP", s: "recurring investing", c: "sip" as AssetClass },
+                { ic: "🏦", t: "Fixed deposit", s: "FD / bonds", c: "fd" as AssetClass },
+                { ic: "🪙", t: "Gold", s: "jewellery, coins, SGB", c: "gold" as AssetClass },
+                { ic: "💵", t: "Cash & savings", s: "bank balances", c: "cash" as AssetClass },
+              ]).map((x) => (
+                <button key={x.t} type="button" className="starter"
+                  onClick={() => setAssetSheet({ open: true, edit: null, presetClass: x.c, presetRented: x.rented })}>
+                  <span className="ic">{x.ic}</span>
+                  <span className="t">{x.t}</span>
+                  <span className="s">{x.s}</span>
+                </button>
+              ))}
+            </div>
+            <div className="hint" style={{ marginTop: 8 }}>Each one takes under a minute — tell the story of how you got it, and the math follows.</div>
+          </div>
+        ) : <div className="empty">No assets yet.</div>
+      )}
+
+      {/* summary strip — the household's property pulse at a glance */}
+      {canSeeFinancials && properties.length > 0 && (
+        <div className="sumstrip">
+          <span><span className="k">Properties</span><span className="v num">{inr(propTotal)}</span></span>
+          {rentedProps.length > 0 && <span><span className="k">Net rent</span><span className="v num">{inr(netRent)}<span className="per">/mo</span></span></span>}
+          {rentedProps.length > 0 && <span><span className="k">Occupied</span><span className="v num">{rentedProps.filter((a) => (pulses[a.id]?.rentStatus ?? null) !== null || a.tenantName).length} of {rentedProps.length}</span></span>}
+          {totalEmi > 0 && <span><span className="k">EMI</span><span className="v num">{inr(totalEmi)}<span className="per">/mo</span></span></span>}
+          <span><span className="k">Needs you</span><span className="v num" style={{ color: needsYou > 0 ? "var(--warn)" : "var(--ink)" }}>{needsYou}</span></span>
+        </div>
+      )}
+
+      {/* properties as cards — a place with a story and a pulse, not a line item */}
+      {properties.length > 0 && (
         <>
-          <div className="label" style={{ marginBottom: 8 }}>Debt service</div>
-          <div className="tiles" style={{ marginBottom: 16 }}>
-            <div className="tile"><div className="tl">Gross assets</div><div className="tv num" style={{ fontSize: 21, marginTop: 4 }}>{inr(gross)}</div></div>
-            <div className="tile b"><div className="tl">Total EMI</div><div className="tv num" style={{ fontSize: 21, marginTop: 4 }}>{inr(totalEmi)}<span style={{ fontSize: 12, color: "var(--muted)" }}>/mo</span></div></div>
-            <div className="tile"><div className="tl">EMI vs income</div><div className="tv num" style={{ fontSize: 21, marginTop: 4 }}>{income ? `${((totalEmi / income) * 100).toFixed(0)}%` : "—"}</div></div>
+          <div className="sec-label" style={{ marginTop: 4 }}>Properties · {inr(propTotal)}</div>
+          <div className="pgrid">
+            {properties.map((a) => (
+              <PropertyCard key={a.id} asset={a} pulse={pulses[a.id]} loan={securedFor(a.id)}
+                ownerName={a.memberId ? memberName(a.memberId) ?? null : null}
+                canSee={canSeeFinancials} canEdit={canEditAssets}
+                onEdit={() => setAssetSheet({ open: true, edit: a })} />
+            ))}
           </div>
         </>
       )}
 
-      <div className="scroll">
-        <table>
-          <thead><tr><th style={{ width: "34%" }}>Asset</th><th>Market value</th>{canSeeFinancials && <><th>Loan</th><th>Equity</th><th>LTV</th></>}<th></th></tr></thead>
-          <tbody>
-            {topLevel.length === 0 && (
-              <tr><td colSpan={cols} style={{ padding: "18px 10px" }}>
-                {canEditAssets ? (
-                  <>
-                    <div style={{ fontWeight: 600, marginBottom: 2 }}>What do you own? Start with one:</div>
-                    <div className="starters">
-                      {([
-                        { ic: "🏠", t: "Home I live in", s: "house or flat", c: "real_estate" as AssetClass },
-                        { ic: "🏢", t: "Property I rent out", s: "earns rent", c: "real_estate" as AssetClass, rented: true },
-                        { ic: "📈", t: "Mutual funds / SIP", s: "recurring investing", c: "sip" as AssetClass },
-                        { ic: "🏦", t: "Fixed deposit", s: "FD / bonds", c: "fd" as AssetClass },
-                        { ic: "🪙", t: "Gold", s: "jewellery, coins, SGB", c: "gold" as AssetClass },
-                        { ic: "💵", t: "Cash & savings", s: "bank balances", c: "cash" as AssetClass },
-                      ]).map((x) => (
-                        <button key={x.t} type="button" className="starter"
-                          onClick={() => setAssetSheet({ open: true, edit: null, presetClass: x.c, presetRented: x.rented })}>
-                          <span className="ic">{x.ic}</span>
-                          <span className="t">{x.t}</span>
-                          <span className="s">{x.s}</span>
-                        </button>
-                      ))}
-                    </div>
-                    <div className="hint" style={{ marginTop: 8 }}>Each one takes under a minute — tell the story of how you got it, and the math follows.</div>
-                  </>
-                ) : (
-                  <span className="empty" style={{ display: "block", padding: 0 }}>No assets yet.</span>
-                )}
-              </td></tr>
-            )}
-            {topLevel.flatMap((a) => [renderAssetRow(a), ...childrenOf(a.id).map((c) => renderAssetRow(c, true))])}
-          </tbody>
-        </table>
-      </div>
+      {/* everything else, compactly */}
+      {others.length > 0 && (
+        <>
+          <div className="sec-label">
+            <span>Everything else · {inr(others.reduce((s, a) => s + a.value, 0))}</span>
+            {canSeeFinancials && liquidTotal > 0 && <span className="hint" style={{ fontWeight: 400 }}>{inr(liquidTotal)} reachable within a week</span>}
+          </div>
+          <div className="scroll">
+            <table>
+              <tbody>
+                {others.flatMap((a) => [renderOtherRow(a), ...childrenOf(a.id).map((c) => renderOtherRow(c, true))])}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
 
       {canSeeFinancials && (
         <>
@@ -266,6 +286,63 @@ export default function Assets() {
         <MemberSheet householdId={hhId} existing={memberSheet.edit} onClose={() => setMemberSheet({ open: false })} onSaved={() => { setMemberSheet({ open: false }); refresh(); }} />
       )}
     </Shell>
+  );
+}
+
+const RENT_DOT: Record<string, string> = { collected: "d-good", due: "d-warn", waived: "d-mut", none: "d-none" };
+
+/** A property as a place with a story and a pulse — the register's centrepiece. */
+function PropertyCard({ asset: a, pulse, loan, ownerName, canSee, canEdit, onEdit }: {
+  asset: Asset; pulse?: PropertyPulse; loan: number; ownerName: string | null;
+  canSee: boolean; canEdit: boolean; onEdit: () => void;
+}) {
+  const re = a.realEstate;
+  const rented = (a.monthlyRent ?? 0) > 0;
+  const ltv = a.value > 0 && loan > 0 ? (loan / a.value) * 100 : null;
+  const drift = canSee && pulse?.aiMid != null && a.value > 0 ? ((pulse.aiMid - a.value) / a.value) * 100 : null;
+  const needsSize = !(re?.city && re?.sqft);
+  const place = [re?.locality, re?.city].filter(Boolean).join(", ");
+  const how = a.acquiredHow ? a.acquiredHow.charAt(0).toUpperCase() + a.acquiredHow.slice(1) : null;
+  const story = [place, how && a.acquiredYear ? `${how} ${a.acquiredYear}` : rented ? "Rented out" : "Home"].filter(Boolean).join(" · ");
+  const attn = pulse ? pulse.rentStatus === "due" || pulse.openRequests > 0 : false;
+
+  return (
+    <div className={`pcard${attn ? " attn" : ""}`}>
+      <Link href={`/assets/view?id=${a.id}`} className="pcard-cover">
+        {pulse?.photoDataUrl
+          ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={pulse.photoDataUrl} alt="" />
+          : <div className="mono-tile">{a.name.trim().charAt(0).toUpperCase()}</div>}
+        {ownerName && <span className="pcard-owner" title={ownerName}>{ownerName.charAt(0).toUpperCase()}</span>}
+      </Link>
+      <div className="pcard-bd">
+        <Link href={`/assets/view?id=${a.id}`} className="pcard-nm">{a.name}</Link>
+        {story && <div className="pcard-story">{story}</div>}
+        {canSee && (
+          <div className="pcard-vrow">
+            <span className="pcard-vl num">{inr(a.value)}</span>
+            {drift != null && Math.abs(drift) >= 1
+              ? <span className="pill p-seal" title={`AI estimate ${inr(pulse!.aiMid!)}`}>AI {drift >= 0 ? "+" : ""}{drift.toFixed(0)}%</span>
+              : ltv != null ? <span className="sub">equity {inr(a.value - loan)}</span> : <span className="sub">owned</span>}
+          </div>
+        )}
+        {rented && pulse && (
+          <div className="rentdots" title="Rent — last 6 months">
+            {pulse.rentDots.map((d) => <i key={d.month} className={RENT_DOT[d.status]} />)}
+            <span className="cap">rent, 6 mo</span>
+          </div>
+        )}
+        <div className="pcard-chips">
+          {rented && pulse?.rentStatus === "collected" && <span className="pill p-good">rent ✓</span>}
+          {rented && pulse?.rentStatus === "due" && <span className="pill p-warn">rent due</span>}
+          {rented && !pulse?.rentStatus && <span className="pill p-muted">rented</span>}
+          {!rented && <span className="pill p-muted">self-occupied</span>}
+          {canSee && loan > 0 && <span className="pill p-warn">loan {inr(loan)}{ltv != null ? ` · ${ltv.toFixed(0)}%` : ""}</span>}
+          {pulse && pulse.openRequests > 0 && <span className="pill p-acc">{pulse.openRequests} request{pulse.openRequests > 1 ? "s" : ""}</span>}
+          {pulse && pulse.docCount > 0 && <span className="pill p-info">📄 {pulse.docCount}</span>}
+          {canEdit && needsSize && <button className="pill p-warn chip-btn" onClick={onEdit} title="City, locality and size unlock the free AI estimate">add size → AI estimate</button>}
+        </div>
+      </div>
+    </div>
   );
 }
 

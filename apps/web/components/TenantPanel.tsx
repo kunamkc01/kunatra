@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, type TenantInfo } from "@/lib/api";
 
 /** Owner-side tenant access for a rented property: invite, share link, revoke. */
-export function TenantPanel({ assetId }: { assetId: string }) {
+export function TenantPanel({ assetId, flat = false }: { assetId: string; flat?: boolean }) {
   const [tenant, setTenant] = useState<TenantInfo | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [name, setName] = useState(""); const [email, setEmail] = useState(""); const [phone, setPhone] = useState("");
@@ -33,7 +33,7 @@ export function TenantPanel({ assetId }: { assetId: string }) {
   if (!loaded) return null;
 
   return (
-    <div style={{ marginTop: 18, borderTop: "1px solid var(--line)", paddingTop: 14 }}>
+    <div style={flat ? undefined : { marginTop: 18, borderTop: "1px solid var(--line)", paddingTop: 14 }}>
       <div className="story-sec">Tenant access</div>
       {tenant && !tenant.revoked ? (
         <>

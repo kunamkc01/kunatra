@@ -2,7 +2,7 @@
 import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
-import { api, type Asset, type AssetDetail, type Member, type PropertyValuation, type Valuation } from "@/lib/api";
+import { api, type Asset, type AssetDetail, type AssetPulse, type AssetPhoto, type Member, type PropertyValuation, type Valuation } from "@/lib/api";
 import { inr, inrExact, assetClassLabel } from "@/lib/format";
 import { useAuth } from "@/lib/useAuth";
 import { Shell } from "@/components/Shell";
@@ -30,6 +30,7 @@ function AssetDetailView() {
   const [asset, setAsset] = useState<Asset | null>(null);
   const [detail, setDetail] = useState<AssetDetail | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
+  const [pulse, setPulse] = useState<AssetPulse | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
 
@@ -49,6 +50,9 @@ function AssetDetailView() {
   }, [id]);
 
   useEffect(() => { if (ready && user) { load(); api.listMembers(user.householdId).then(setMembers).catch(() => {}); } }, [ready, user, load]);
+  useEffect(() => {
+    if (ready && id && asset?.assetClass === "real_estate") api.assetPulse(id).then(setPulse).catch(() => {});
+  }, [ready, id, asset?.assetClass]);
 
   async function remove() {
     if (!asset || !confirm(`Delete "${asset.name}"? This can't be undone.`)) return;
@@ -61,18 +65,27 @@ function AssetDetailView() {
   const m = detail?.metrics;
   const re = asset?.realEstate;
   const isProperty = asset?.assetClass === "real_estate";
+  const isRented = isProperty && (asset?.monthlyRent ?? 0) > 0;
+  const canManageTenant = isRented && (role === "owner" || role === "manager");
+  const subtitle = [
+    re?.address, re?.locality || re?.city ? [re?.locality, re?.city].filter(Boolean).join(", ") : null,
+    re?.sqft != null ? `${re.sqft} sq ft` : null,
+    asset?.acquiredHow && m?.acquiredYear ? `${asset.acquiredHow} ${m.acquiredYear}` : m?.acquiredYear ? `since ${m.acquiredYear}` : null,
+  ].filter(Boolean).join(" · ") || (asset ? assetClassLabel(asset.assetClass) : "");
 
   return (
     <Shell>
       <div className="scr-head">
-        <div>
-          <Link href="/manage" className="backlink">← All assets</Link>
-          <h2 className="scr-title" style={{ marginTop: 4 }}>{asset?.name ?? "Asset"}</h2>
-          <div className="scr-sub">
-            {asset && assetClassLabel(asset.assetClass)}
-            {detail?.ownerName ? ` · ${detail.ownerName}` : ""}
-            {m?.acquiredYear ? ` · since ${m.acquiredYear}` : ""}
-            {asset?.acquiredHow ? ` · ${asset.acquiredHow}` : ""}
+        <div style={{ display: "flex", gap: 14, alignItems: "center", minWidth: 0 }}>
+          <HeroThumb assetId={id} name={asset?.name ?? "A"} />
+          <div style={{ minWidth: 0 }}>
+            <Link href="/manage" className="backlink">← All assets</Link>
+            <h2 className="scr-title" style={{ marginTop: 2 }}>{asset?.name ?? "Asset"}</h2>
+            <div className="scr-sub">
+              {subtitle}
+              {detail?.ownerName ? ` · ${detail.ownerName}` : ""}
+              {isRented ? <> · <span className="pill p-good">rented</span></> : null}
+            </div>
           </div>
         </div>
         <div className="acts">
@@ -83,95 +96,107 @@ function AssetDetailView() {
 
       {err && <div className="strip bad">{err}</div>}
 
-      {/* headline value */}
-      {m && (
-        <div className="panel" style={{ marginBottom: 14 }}>
-          <div className="label">Worth today</div>
-          <div className="num" style={{ fontSize: 30, marginTop: 2 }}>{inrExact(m.currentValue)}</div>
-          {canSeeFinancials && m.costBasis != null && (
-            <div className="meta" style={{ marginTop: 4 }}>
-              Acquired at {inr(m.costBasis)} ·{" "}
-              <span style={{ color: m.unrealizedGain >= 0 ? "var(--good)" : "var(--bad)" }}>
-                {m.unrealizedGain >= 0 ? "+" : "−"}{inr(Math.abs(m.unrealizedGain))} ({pct(m.gainPct)})
-              </span>
+      <div className={isProperty ? "det2" : undefined}>
+        <div className="det-main">
+          {/* your value and the AI's, side by side — the mirror, not the advisor */}
+          {m && (
+            <DualValuation asset={asset} metrics={m} canSeeFinancials={canSeeFinancials} isProperty={!!isProperty} />
+          )}
+
+          {/* on phones the pulse slots in right here, under the valuation */}
+          {pulse && <div className="only-mobile" style={{ marginBottom: 14 }}><ThisMonth pulse={pulse} isRented={!!isRented} /></div>}
+
+          {/* value over time — your records as the line, AI estimates as dated dots */}
+          {isProperty && asset && canSeeFinancials && <ValueJourney asset={asset} />}
+
+          {/* metric tiles */}
+          {canSeeFinancials && m && (
+            <div className="tiles" style={{ marginBottom: 16 }}>
+              {m.xirrPct != null && <Tile label="Return (XIRR)" value={pct(m.xirrPct)} tone={m.xirrPct >= 0 ? "good" : "bad"} />}
+              {m.appreciationCagrPct != null && <Tile label="Appreciation p.a." value={pct(m.appreciationCagrPct)} />}
+              {m.monthlyContribution > 0 && <Tile label="Investing" value={`${inr(m.monthlyContribution)}/mo`} />}
+              {m.securedOutstanding > 0 && <Tile label="Equity" value={inr(m.equity)} sub={m.ltvPct != null ? `${m.ltvPct.toFixed(0)}% LTV` : undefined} />}
+              {m.netRentMonthly > 0 && <Tile label="Net rent" value={`${inr(m.netRentMonthly)}/mo`} />}
+              {m.dscr != null && <Tile label="DSCR" value={`${m.dscr.toFixed(2)}×`} tone={m.dscr >= 1.2 ? "good" : m.dscr >= 1 ? "warn" : "bad"} sub="rent ÷ EMI" />}
             </div>
           )}
+
+          {/* secured loans */}
+          {canSeeFinancials && detail && detail.securedLoans.length > 0 && (
+            <>
+              <div className="sec-label">Borrowed against this</div>
+              {detail.securedLoans.map((l) => (
+                <div className="row-item" key={l.id}>
+                  <div className="h"><span className="t">{l.name}</span><span className="tnum" style={{ color: "var(--bad)" }}>{inr(l.outstanding)}</span></div>
+                  <div className="meta">EMI {inr(l.emiMonthly)}/mo{l.ratePct != null ? ` · ${l.ratePct}%` : ""}</div>
+                </div>
+              ))}
+            </>
+          )}
+
+          {/* components */}
+          {detail && detail.children.length > 0 && (
+            <>
+              <div className="sec-label">Components</div>
+              {detail.children.map((c) => (
+                <Link href={`/assets/view?id=${c.id}`} className="row-item link" key={c.id}>
+                  <div className="h"><span className="t">{c.name}</span>{canSeeFinancials && <span className="tnum">{inr(c.value)}</span>}</div>
+                  <div className="meta">{assetClassLabel(c.assetClass)}</div>
+                </Link>
+              ))}
+            </>
+          )}
+
+          {/* AI insight detail (range, reasons, feedback) — the dual panel above carries the headline */}
+          {isProperty && asset && (
+            <PropertyInsights assetId={asset.id} ownValue={asset.value} ownRent={asset.monthlyRent} canEdit={canEdit} canSeeFinancials={canSeeFinancials} onRecorded={load} />
+          )}
+
+          {/* value history + contributions (financial) */}
+          {canSeeFinancials && asset && <ValueHistory assetId={asset.id} onChanged={load} />}
+          {canSeeFinancials && asset && <ContributionLedger assetId={asset.id} onChanged={load} />}
         </div>
-      )}
 
-      {/* value over time — your records as the line, AI estimates as dated dots */}
-      {isProperty && asset && canSeeFinancials && <ValueJourney asset={asset} />}
+        {isProperty && (
+          <div className="det-rail">
+            {/* the property's pulse: rent, open requests, next compliance */}
+            {pulse && <div className="only-desktop"><ThisMonth pulse={pulse} isRented={!!isRented} /></div>}
 
-      {/* metric tiles */}
-      {canSeeFinancials && m && (
-        <div className="tiles" style={{ marginBottom: 16 }}>
-          {m.xirrPct != null && <Tile label="Return (XIRR)" value={pct(m.xirrPct)} tone={m.xirrPct >= 0 ? "good" : "bad"} />}
-          {m.appreciationCagrPct != null && <Tile label="Appreciation p.a." value={pct(m.appreciationCagrPct)} />}
-          {m.monthlyContribution > 0 && <Tile label="Investing" value={`${inr(m.monthlyContribution)}/mo`} />}
-          {m.securedOutstanding > 0 && <Tile label="Equity" value={inr(m.equity)} sub={m.ltvPct != null ? `${m.ltvPct.toFixed(0)}% LTV` : undefined} />}
-          {m.netRentMonthly > 0 && <Tile label="Net rent" value={`${inr(m.netRentMonthly)}/mo`} />}
-          {m.dscr != null && <Tile label="DSCR" value={`${m.dscr.toFixed(2)}×`} tone={m.dscr >= 1.2 ? "good" : m.dscr >= 1 ? "warn" : "bad"} sub="rent ÷ EMI" />}
-        </div>
-      )}
+            {/* tenant portal access (money managers only) */}
+            {asset && canManageTenant && (
+              <div className="panel det-card"><TenantPanel assetId={asset.id} flat /></div>
+            )}
 
-      {/* secured loans */}
-      {canSeeFinancials && detail && detail.securedLoans.length > 0 && (
+            {/* the vault — paperwork lives with the property */}
+            {asset && <div className="panel det-card"><DocumentsPanel assetId={asset.id} canEdit={canEdit} flat /></div>}
+
+            {/* photos + facts */}
+            {asset && canManagePhotos && <div className="panel det-card"><PhotoGallery assetId={asset.id} /></div>}
+            {re && (re.address || re.sqft || re.ptin || re.undividedShare) && (
+              <div className="panel det-card">
+                <div className="sec-label" style={{ marginTop: 0 }}>The property</div>
+                <dl className="deflist">
+                  {re.address && <><dt>Address</dt><dd>{re.address}</dd></>}
+                  {re.sqft != null && <><dt>Area</dt><dd>{re.sqft} sq ft</dd></>}
+                  {re.undividedShare && <><dt>Undivided share</dt><dd>{re.undividedShare}</dd></>}
+                  {re.ptin && <><dt>PTIN</dt><dd>{re.ptin}</dd></>}
+                </dl>
+              </div>
+            )}
+
+            {/* what's been happening here */}
+            {pulse && <ActivityFeed items={pulse.activity} />}
+          </div>
+        )}
+      </div>
+
+      {/* non-property assets keep the vault + photos below the money */}
+      {!isProperty && asset && (
         <>
-          <div className="sec-label">Borrowed against this</div>
-          {detail.securedLoans.map((l) => (
-            <div className="row-item" key={l.id}>
-              <div className="h"><span className="t">{l.name}</span><span className="tnum" style={{ color: "var(--bad)" }}>{inr(l.outstanding)}</span></div>
-              <div className="meta">EMI {inr(l.emiMonthly)}/mo{l.ratePct != null ? ` · ${l.ratePct}%` : ""}</div>
-            </div>
-          ))}
+          {canManagePhotos && <PhotoGallery assetId={asset.id} />}
+          <DocumentsPanel assetId={asset.id} canEdit={canEdit} />
         </>
       )}
-
-      {/* components */}
-      {detail && detail.children.length > 0 && (
-        <>
-          <div className="sec-label">Components</div>
-          {detail.children.map((c) => (
-            <Link href={`/assets/view?id=${c.id}`} className="row-item link" key={c.id}>
-              <div className="h"><span className="t">{c.name}</span>{canSeeFinancials && <span className="tnum">{inr(c.value)}</span>}</div>
-              <div className="meta">{assetClassLabel(c.assetClass)}</div>
-            </Link>
-          ))}
-        </>
-      )}
-
-      {/* property details */}
-      {isProperty && re && (re.address || re.sqft || re.ptin || re.undividedShare) && (
-        <div className="panel" style={{ marginTop: 6 }}>
-          <div className="sec-label" style={{ marginTop: 0 }}>Property details</div>
-          <dl className="deflist">
-            {re.address && <><dt>Address</dt><dd>{re.address}</dd></>}
-            {re.sqft != null && <><dt>Area</dt><dd>{re.sqft} sq ft</dd></>}
-            {re.undividedShare && <><dt>Undivided share</dt><dd>{re.undividedShare}</dd></>}
-            {re.ptin && <><dt>PTIN</dt><dd>{re.ptin}</dd></>}
-          </dl>
-        </div>
-      )}
-
-      {/* AI value estimate — beside the user's value, never instead of it */}
-      {isProperty && asset && (
-        <PropertyInsights assetId={asset.id} ownValue={asset.value} ownRent={asset.monthlyRent} canEdit={canEdit} canSeeFinancials={canSeeFinancials} onRecorded={load} />
-      )}
-
-      {/* photos — everyone in the household can view; managing is server-scoped */}
-      {asset && canManagePhotos && <PhotoGallery assetId={asset.id} />}
-
-      {/* the vault — paperwork lives with the property */}
-      {asset && <DocumentsPanel assetId={asset.id} canEdit={canEdit} />}
-
-      {/* tenant portal access (rented properties; money managers only) */}
-      {asset && isProperty && (asset.monthlyRent ?? 0) > 0 && (role === "owner" || role === "manager") && (
-        <TenantPanel assetId={asset.id} />
-      )}
-
-      {/* value history + contributions (financial) */}
-      {canSeeFinancials && asset && <ValueHistory assetId={asset.id} onChanged={load} />}
-      {canSeeFinancials && asset && <ContributionLedger assetId={asset.id} onChanged={load} />}
 
       {editing && asset && user && (
         <AssetSheet
@@ -184,6 +209,116 @@ function AssetDetailView() {
         />
       )}
     </Shell>
+  );
+}
+
+/** First photo as a 56px cover; a serif monogram tile when there is none. */
+function HeroThumb({ assetId, name }: { assetId: string; name: string }) {
+  const [photo, setPhoto] = useState<AssetPhoto | null | undefined>(undefined);
+  useEffect(() => { api.listAssetPhotos(assetId).then((p) => setPhoto(p[0] ?? null)).catch(() => setPhoto(null)); }, [assetId]);
+  if (photo === undefined) return <div className="hero-thumb" aria-hidden />;
+  return photo ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img className="hero-thumb" src={photo.dataUrl} alt="" />
+  ) : (
+    <div className="hero-thumb mono-tile" aria-hidden>{name.trim().charAt(0).toUpperCase()}</div>
+  );
+}
+
+/** Your value and the AI's side by side, as equals. Falls back to the single worth panel. */
+function DualValuation({ asset, metrics, canSeeFinancials, isProperty }: {
+  asset: Asset | null; metrics: NonNullable<AssetDetail["metrics"]>; canSeeFinancials: boolean; isProperty: boolean;
+}) {
+  const [ai, setAi] = useState<PropertyValuation | null>(null);
+  useEffect(() => {
+    if (isProperty && asset) api.getPropertyValuation(asset.id).then(setAi).catch(() => {});
+  }, [isProperty, asset]);
+
+  const hasAi = canSeeFinancials && ai?.status === "ok" && ai.estimatedValue != null;
+  const diffPct = hasAi && asset && asset.value > 0 ? ((ai!.estimatedValue! - asset.value) / asset.value) * 100 : null;
+
+  return (
+    <div className={hasAi ? "dualval" : undefined} style={{ marginBottom: 14 }}>
+      <div className="panel" style={{ marginBottom: hasAi ? 0 : undefined }}>
+        <div className="label">{hasAi ? "Your value" : "Worth today"}</div>
+        <div className="num" style={{ fontSize: hasAi ? 26 : 30, marginTop: 2 }}>{inrExact(metrics.currentValue)}</div>
+        {canSeeFinancials && metrics.costBasis != null && (
+          <div className="meta" style={{ marginTop: 4 }}>
+            Acquired at {inr(metrics.costBasis)} ·{" "}
+            <span style={{ color: metrics.unrealizedGain >= 0 ? "var(--good)" : "var(--bad)" }}>
+              {metrics.unrealizedGain >= 0 ? "+" : "−"}{inr(Math.abs(metrics.unrealizedGain))} ({pct(metrics.gainPct)})
+            </span>
+          </div>
+        )}
+      </div>
+      {hasAi && (
+        <div className="panel" style={{ borderLeft: "3px solid var(--seal)" }}>
+          <div className="label">AI estimate{ai!.confidence && <span className={`pill ${CONF_PILL[ai!.confidence]}`} style={{ marginLeft: 6 }}>{ai!.confidence}</span>}</div>
+          <div className="num" style={{ fontSize: 26, marginTop: 2 }}>{inr(ai!.estimatedValue!)}</div>
+          <div className="meta" style={{ marginTop: 4 }}>
+            {ai!.lowValue != null && ai!.highValue != null ? `${inr(ai!.lowValue)} – ${inr(ai!.highValue)}` : ""}
+            {diffPct != null && <> · <b style={{ color: Math.abs(diffPct) < 10 ? "var(--good)" : "var(--seal)" }}>{diffPct >= 0 ? "+" : ""}{diffPct.toFixed(0)}% vs yours</b></>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const WO_PILL: Record<string, string> = { open: "p-warn", in_progress: "p-acc" };
+
+/** The rail opener: is rent in, does anything need me, what is due next. */
+function ThisMonth({ pulse: p, isRented }: { pulse: AssetPulse; isRented: boolean }) {
+  if (!isRented && p.openWorkOrders.length === 0 && !p.nextCompliance) return null;
+  const good = p.rent?.status === "collected" && p.openWorkOrders.length === 0;
+  return (
+    <div className="panel det-card" style={{ borderLeft: `3px solid ${good ? "var(--good)" : "var(--warn)"}` }}>
+      <div className="sec-label" style={{ marginTop: 0 }}>This month</div>
+      {isRented && (
+        <div style={{ fontSize: 13 }}>
+          Rent{" "}
+          {p.rent?.status === "collected"
+            ? <b style={{ color: "var(--good)" }}>✓ collected{p.rent.collectedOn ? ` ${new Date(`${p.rent.collectedOn}T00:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}` : ""}</b>
+            : p.rent?.status === "waived"
+              ? <b className="muted">waived</b>
+              : <b style={{ color: "var(--warn)" }}>due{p.rent ? ` · ${inr(p.rent.amountDue)}` : ""}</b>}
+          {p.rent?.status === "collected" && (
+            <Link href={`/receipts/view?id=${p.rent.id}`} className="btn ghost small" style={{ marginLeft: 6 }}>Receipt</Link>
+          )}
+        </div>
+      )}
+      {p.openWorkOrders.map((w) => (
+        <div key={w.id} style={{ fontSize: 13, marginTop: 6 }}>
+          <span className={`pill ${WO_PILL[w.status] ?? "p-info"}`}>{w.status.replace("_", " ")}</span>{" "}
+          {w.title}{w.tenantRaised && <span className="pill p-acc" style={{ marginLeft: 5 }}>tenant</span>}
+        </div>
+      ))}
+      {p.nextCompliance && (
+        <div style={{ fontSize: 13, marginTop: 6 }}>
+          Next: {p.nextCompliance.title} <span className="muted">due {new Date(`${p.nextCompliance.dueOn}T00:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const ACT_ICON: Record<string, string> = { document: "📄", rent: "₹", tenant_request: "🔧", work_order: "🔧", ai_estimate: "◆", valuation: "●" };
+
+/** Receipts filed, docs uploaded, requests raised — the page feels inhabited. */
+function ActivityFeed({ items }: { items: AssetPulse["activity"] }) {
+  if (items.length === 0) return null;
+  return (
+    <div className="panel det-card">
+      <div className="sec-label" style={{ marginTop: 0 }}>Recent activity</div>
+      <div className="feed">
+        {items.map((a, i) => (
+          <div key={i}>
+            <span className="when">{new Date(a.at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</span>
+            <span><span aria-hidden style={{ marginRight: 5 }}>{ACT_ICON[a.kind] ?? "·"}</span>{a.text}</span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

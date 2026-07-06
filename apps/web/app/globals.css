@@ -266,3 +266,56 @@ tbody tr:last-child td { border-bottom: 0; }
 .qa-row { display: grid; grid-template-columns: 1fr 130px 130px; gap: 8px; margin-bottom: 8px; }
 .qa-row input, .qa-row select { width: 100%; }
 @media (max-width: 560px) { .qa-row { grid-template-columns: 1fr; } }
+
+/* Asset detail v2 — money left, matter right */
+.det2 { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.det-rail { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.det-rail .det-card { margin-bottom: 0; }
+.det-main { min-width: 0; }
+.dualval { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.dualval .panel { margin-bottom: 0; }
+.hero-thumb { width: 56px; height: 56px; border-radius: 12px; object-fit: cover; border: 1px solid var(--line); background: var(--tint); flex: none; }
+.mono-tile { display: flex; align-items: center; justify-content: center; font-family: var(--serif); font-size: 24px; color: var(--navy); background: linear-gradient(135deg, #E5EAF2, #CBD6E6); }
+.feed { font-size: 12.5px; color: var(--slate); }
+.feed > div { padding: 6px 0; border-bottom: 1px solid var(--line); display: flex; gap: 8px; align-items: baseline; }
+.feed > div:last-child { border-bottom: 0; padding-bottom: 0; }
+.feed .when { color: var(--muted); flex: none; width: 46px; font-family: var(--mono); font-size: 10.5px; }
+.only-mobile { display: none; }
+@media (max-width: 760px) {
+  .det2 { grid-template-columns: 1fr; }
+  .dualval { grid-template-columns: 1fr; }
+  /* curated mobile order: the This-month card re-appears under the valuation, the rail copy hides */
+  .only-mobile { display: block; }
+  .only-desktop { display: none; }
+}
+
+/* Register v2 — property-first */
+.sumstrip { display: flex; gap: 22px; flex-wrap: wrap; background: var(--tint); border: 1px solid var(--line); border-radius: 12px; padding: 11px 16px; margin-bottom: 18px; align-items: baseline; }
+.sumstrip .k { display: block; font-size: 10.5px; color: var(--slate); }
+.sumstrip .v { font-family: var(--serif); font-weight: 500; font-size: 18px; }
+.sumstrip .per { font-size: 11px; color: var(--muted); font-family: var(--sans); }
+
+.pgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; margin-bottom: 4px; }
+.pcard { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--surface); position: relative; transition: border-color .12s, box-shadow .12s; }
+.pcard:hover { border-color: var(--line-strong); box-shadow: 0 6px 18px rgba(22,36,63,.07); }
+.pcard.attn { border-color: #E8D5AC; box-shadow: 0 0 0 1px #E8D5AC; }
+.pcard-cover { display: block; height: 92px; position: relative; }
+.pcard-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pcard-cover .mono-tile { width: 100%; height: 100%; border-radius: 0; font-size: 30px; }
+.pcard-owner { position: absolute; bottom: -13px; right: 12px; width: 27px; height: 27px; border-radius: 50%; background: var(--navy); color: #fff; font-size: 11px; font-weight: 600; display: flex; align-items: center; justify-content: center; border: 2px solid var(--surface); }
+.pcard-bd { padding: 11px 13px 12px; }
+.pcard-nm { display: block; font-size: 13.5px; font-weight: 600; color: var(--ink); text-decoration: none; }
+.pcard-nm:hover { text-decoration: underline; }
+.pcard-story { font-size: 11px; color: var(--muted); margin: 1px 0 8px; }
+.pcard-vrow { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+.pcard-vl { font-family: var(--serif); font-weight: 500; font-size: 18px; }
+.pcard-chips { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 9px; }
+.pcard-chips .chip-btn { margin-right: 0; }
+
+.rentdots { display: flex; align-items: center; gap: 4px; margin-top: 8px; }
+.rentdots i { width: 8px; height: 8px; border-radius: 50%; display: block; }
+.rentdots .d-good { background: var(--good); }
+.rentdots .d-warn { background: var(--warn); }
+.rentdots .d-mut { background: var(--muted); }
+.rentdots .d-none { background: var(--line-strong); }
+.rentdots .cap { font-size: 9.5px; color: var(--muted); margin-left: 5px; }

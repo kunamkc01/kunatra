@@ -85,6 +85,24 @@ export interface MemberAssessment {
   assessment: Assessment;
 }
 
+export interface RentDot { month: string; status: "collected" | "due" | "waived" | "none" }
+export interface PropertyPulse {
+  assetId: string;
+  rentStatus: string | null;
+  rentDots: RentDot[];
+  openRequests: number;
+  tenantRaised: boolean;
+  docCount: number;
+  photoDataUrl: string | null;
+  aiMid: number | null;
+}
+export interface AssetPulse {
+  rent: { id: string; status: string; collectedOn: string | null; amountDue: number } | null;
+  openWorkOrders: { id: string; title: string; status: string; tenantRaised: boolean }[];
+  nextCompliance: { title: string; dueOn: string } | null;
+  activity: { at: string; kind: string; text: string }[];
+}
+
 export interface Asset {
   id: string;
   householdId: string;
@@ -461,6 +479,8 @@ export const api = {
   propertyValuationFeedback: (assetId: string, b: { feedback: "too_low" | "accurate" | "too_high"; userValue?: number }) =>
     req<PropertyValuation>(`/api/assets/${assetId}/valuation/feedback`, { method: "POST", body: JSON.stringify(b) }),
   assetDetail: (assetId: string) => req<AssetDetail>(`/api/assets/${assetId}/detail`),
+  propertyPulse: (householdId: string) => req<PropertyPulse[]>(`/api/households/${householdId}/property-pulse`),
+  assetPulse: (assetId: string) => req<AssetPulse>(`/api/assets/${assetId}/pulse`),
   updateAsset: (assetId: string, b: Partial<Asset>) =>
     req<Asset>(`/api/assets/${assetId}`, { method: "PATCH", body: JSON.stringify(b) }),
   deleteAsset: (assetId: string) => req<void>(`/api/assets/${assetId}`, { method: "DELETE" }),

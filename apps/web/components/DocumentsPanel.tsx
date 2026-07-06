@@ -22,7 +22,7 @@ function fileToDataUrl(f: File): Promise<string> {
 }
 
 /** The vault, per asset: agreements, bills, receipts — private, RBAC-gated. */
-export function DocumentsPanel({ assetId, canEdit }: { assetId: string; canEdit: boolean }) {
+export function DocumentsPanel({ assetId, canEdit, flat = false }: { assetId: string; canEdit: boolean; flat?: boolean }) {
   const [docs, setDocs] = useState<VaultDocument[]>([]);
   const [kind, setKind] = useState<DocKind>("agreement");
   const [busy, setBusy] = useState(false);
@@ -62,7 +62,7 @@ export function DocumentsPanel({ assetId, canEdit }: { assetId: string; canEdit:
   }
 
   return (
-    <div style={{ marginTop: 18, borderTop: "1px solid var(--line)", paddingTop: 14 }}>
+    <div style={flat ? undefined : { marginTop: 18, borderTop: "1px solid var(--line)", paddingTop: 14 }}>
       <div className="story-sec">Documents</div>
       {canEdit && (
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
