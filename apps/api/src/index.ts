@@ -15,6 +15,7 @@ import { auditMiddleware, listAudit } from './audit.ts';
 import { remindDueCompliance } from './notify.ts';
 import * as admin from './admin.ts';
 import * as access from './access.ts';
+import * as pulse from './pulse.ts';
 import * as documents from './documents.ts';
 import * as tenant from './tenant.ts';
 
@@ -144,6 +145,9 @@ app.post('/api/households/:id/assets', sameHousehold, editAssets, forceMemberOwn
   if (created.assetClass === 'real_estate') void valuation.requestValuation(created.id); // background estimate
   res.status(201).json(created);
 }));
+app.get('/api/households/:id/property-pulse', sameHousehold, h(async (req, res) =>
+  res.json(await pulse.propertyPulse(req.params.id, { financials: req.user!.role !== 'operations' }))));
+app.get('/api/assets/:id/pulse', scopeResource('assets'), h(async (req, res) => res.json(await pulse.assetPulse(req.params.id))));
 app.get('/api/assets/:id', scopeResource('assets'), h(async (req, res) => res.json(await repo.getAsset(req.params.id))));
 app.get('/api/assets/:id/detail', scopeResource('assets'), h(async (req, res) => res.json(await assetDetail(req.params.id, new Date()))));
 app.patch('/api/assets/:id', editAssets, scopeOwned('assets'), h(async (req, res) => {
