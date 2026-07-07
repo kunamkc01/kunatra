@@ -7,7 +7,7 @@ const monthLabel = (iso: string) =>
   new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString("en-IN", { month: "short", year: "2-digit" });
 
 /** Change vs n months back (nearest available point at or before that month). */
-function deltaVs(points: NetWorthPoint[], monthsBack: number): number | null {
+export function deltaVs(points: NetWorthPoint[], monthsBack: number): number | null {
   if (points.length < 2) return null;
   const last = points[points.length - 1];
   const target = new Date(`${last.month.slice(0, 10)}T00:00:00`);
@@ -21,12 +21,14 @@ function deltaVs(points: NetWorthPoint[], monthsBack: number): number | null {
  * The mirror with memory: a hand-rolled SVG line of monthly net-worth
  * snapshots. History accrues from the day snapshots began — no backfill.
  */
-export function NetWorthTrend({ householdId }: { householdId: string }) {
-  const [points, setPoints] = useState<NetWorthPoint[] | null>(null);
+export function NetWorthTrend({ householdId, points: given }: { householdId: string; points?: NetWorthPoint[] | null }) {
+  const [fetched, setFetched] = useState<NetWorthPoint[] | null>(null);
+  const points = given !== undefined ? given : fetched;
 
   useEffect(() => {
-    api.networthHistory(householdId).then(setPoints).catch(() => setPoints(null));
-  }, [householdId]);
+    if (given !== undefined) return; // parent already supplied the points
+    api.networthHistory(householdId).then(setFetched).catch(() => setFetched(null));
+  }, [householdId, given]);
 
   if (!points || points.length === 0) return null;
 

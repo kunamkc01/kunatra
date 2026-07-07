@@ -1,17 +1,16 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import type { Assessment, Signal } from "@atlas/engine";
-import { api, type Household, type Asset, type Loan, type OperationsSummary, type MemberAssessment, type ComplianceSummary } from "@/lib/api";
+import type { Assessment } from "@atlas/engine";
+import { api, type Household, type Asset, type Loan, type OperationsSummary, type MemberAssessment, type ComplianceSummary, type NetWorthPoint } from "@/lib/api";
 import { useAuth } from "@/lib/useAuth";
 import { inr, assetClassLabel } from "@/lib/format";
 import { Shell } from "@/components/Shell";
 import { SetupChecklist } from "@/components/SetupChecklist";
-import { NetWorthTrend } from "@/components/NetWorthTrend";
+import { NetWorthTrend, deltaVs } from "@/components/NetWorthTrend";
 
 const ALLOC_COLORS = ["var(--navy)", "var(--accent)", "var(--good)", "var(--seal)", "var(--warn)", "var(--muted)", "var(--bad)"];
 const tileClass = (sev?: string) => (sev === "good" ? "g" : sev === "watch" ? "w" : sev === "warning" ? "b" : "");
-const stripClass = (sev?: string) => (sev === "good" ? "good" : sev === "watch" ? "warn" : "bad");
 
 export default function Portfolio() {
   const { user, ready } = useAuth({ requireRole: ["owner", "manager", "member", "advisor"] });
@@ -24,15 +23,17 @@ export default function Portfolio() {
   const [memberViews, setMemberViews] = useState<MemberAssessment[]>([]);
   const [comp, setComp] = useState<ComplianceSummary | null>(null);
   const [pendingApprovals, setPendingApprovals] = useState(0);
+  const [nwPoints, setNwPoints] = useState<NetWorthPoint[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   const load = useCallback(async (id: string, owner: boolean) => {
     setErr(null);
     try {
-      const [hh, a, list, ln, mv] = await Promise.all([
+      const [hh, a, list, ln, mv, pts] = await Promise.all([
         api.getHousehold(id), api.assessment(id), api.listAssets(id), api.listLoans(id), api.memberAssessments(id),
+        api.networthHistory(id).catch(() => [] as NetWorthPoint[]),
       ]);
-      setHousehold(hh); setAssessment(a); setAssets(list); setLoans(ln); setMemberViews(mv);
+      setHousehold(hh); setAssessment(a); setAssets(list); setLoans(ln); setMemberViews(mv); setNwPoints(pts);
       // Operations / compliance / approvals are the owner's oversight view.
       if (owner) {
         const [o, c, ap] = await Promise.all([api.operationsSummary(id), api.complianceSummary(id), api.approvalsSummary(id)]);
@@ -63,18 +64,36 @@ export default function Portfolio() {
     .sort((a, b) => (a.severity === "warning" ? 0 : 1) - (b.severity === "warning" ? 0 : 1));
   const hasWarning = flagged.some((s) => s.severity === "warning");
   const status = flagged.length === 0
-    ? { phrase: "Looking steady", color: "var(--good)" }
+    ? { phrase: "Looking steady", color: "var(--good)", bg: "var(--good-bg)" }
     : hasWarning
-      ? { phrase: `${flagged.length} to review`, color: "var(--bad)" }
-      : { phrase: `${flagged.length} to keep an eye on`, color: "var(--warn)" };
-  const flaggedNames = flagged.slice(0, 3).map((s) => s.label.toLowerCase()).join(", ")
-    + (flagged.length > 3 ? `, +${flagged.length - 3} more` : "");
+      ? { phrase: `${flagged.length} to review`, color: "var(--bad)", bg: "var(--bad-bg)" }
+      : { phrase: `${flagged.length} to keep an eye on`, color: "var(--warn)", bg: "var(--warn-bg)" };
 
-  // The headline descriptive signal (most severe) — the overextension "mirror".
-  const lead: Signal | undefined =
-    signals.find((s) => s.severity === "warning") ?? signals.find((s) => s.severity === "watch") ?? signals[0];
+  // Net-worth change since a quarter ago — the one thing the big number can't tell you.
+  const qDelta = nwPoints && nwPoints.length > 1 ? deltaVs(nwPoints, 3) : null;
 
   const loanFor = (assetId: string) => loans.find((l) => l.securedAssetId === assetId);
+
+  // "Needs you": the actionable items, promoted from the old bottom-of-page strips.
+  type Need = { key: string; icon: string; title: string; sub: string; tone: "warn" | "bad" | "acc"; href: string };
+  const needs: Need[] = [];
+  for (const s of flagged) {
+    needs.push({ key: s.key, icon: "◆", title: s.label, sub: s.message, tone: s.severity === "warning" ? "bad" : "warn", href: "/manage" });
+  }
+  if (comp && (comp.overdue > 0 || comp.dueSoon > 0)) {
+    needs.push({
+      key: "compliance", icon: "🗓️",
+      title: comp.overdue > 0 ? `${comp.overdue} compliance item${comp.overdue === 1 ? "" : "s"} overdue` : `${comp.dueSoon} due within 30 days`,
+      sub: comp.next ? `Next: ${comp.next.title} · ${comp.next.dueOn}` : "See Operations",
+      tone: comp.overdue > 0 ? "bad" : "warn", href: "/operations",
+    });
+  }
+  if (isOwner && pendingApprovals > 0) {
+    needs.push({ key: "approvals", icon: "✔", title: `${pendingApprovals} request${pendingApprovals === 1 ? "" : "s"} awaiting approval`, sub: "Operations → Requests", tone: "warn", href: "/operations" });
+  }
+  if (ops && ops.workOrders.active > 0) {
+    needs.push({ key: "workorders", icon: "🔧", title: `${ops.workOrders.active} open work order${ops.workOrders.active === 1 ? "" : "s"}`, sub: `${inr(ops.maintenanceSpendYtd)} maintenance YTD`, tone: "acc", href: "/operations" });
+  }
 
   return (
     <Shell office={household?.displayName}>
@@ -82,16 +101,19 @@ export default function Portfolio() {
         <div>
           <div className="label">Net worth</div>
           <div className="big num">{nw ? inr(nw.netWorth) : "₹—"}</div>
+          {hasData && (
+            <div className="statusrow">
+              {qDelta != null && (
+                <span className={`delta ${qDelta >= 0 ? "up" : "down"}`}>
+                  {qDelta >= 0 ? "▲" : "▼"} {inr(Math.abs(qDelta))} <span className="muted" style={{ fontWeight: 400 }}>this quarter</span>
+                </span>
+              )}
+              <span className="statuschip" style={{ background: status.bg, color: status.color }}>
+                <span className="sdot" style={{ background: status.color }} />{status.phrase}
+              </span>
+            </div>
+          )}
         </div>
-        {hasData && (
-          <div style={{ textAlign: "right", maxWidth: 260 }}>
-            <div className="label">Where you stand</div>
-            <div style={{ fontSize: 13.5, color: status.color, marginTop: 4, fontWeight: 500 }}>{status.phrase}</div>
-            {flagged.length > 0 && (
-              <div className="muted" style={{ fontSize: 11.5, marginTop: 2, lineHeight: 1.4 }}>{flaggedNames}</div>
-            )}
-          </div>
-        )}
       </div>
 
       {err && <div className="strip bad">{err}</div>}
@@ -99,8 +121,27 @@ export default function Portfolio() {
       {/* The owner's guided path — shows until the mirror is built. */}
       {!err && user && <SetupChecklist user={user} />}
 
+      {/* Needs you — the actionable items, up top where they belong. */}
+      {!err && hasData && needs.length > 0 && (
+        <>
+          <div className="sec-label" style={{ marginTop: 4 }}>Needs you</div>
+          <div className="needband">
+            {needs.map((n) => (
+              <Link key={n.key} href={n.href} className={`needcard ${n.tone}`}>
+                <span className="ic" aria-hidden>{n.icon}</span>
+                <div className="nc-body"><div className="t">{n.title}</div><div className="s">{n.sub}</div></div>
+                <span className="go" aria-hidden>→</span>
+              </Link>
+            ))}
+          </div>
+        </>
+      )}
+      {!err && hasData && needs.length === 0 && (
+        <div className="needclear">✓ Nothing needs your attention right now — everything you track is on track.</div>
+      )}
+
       {/* The mirror with memory — monthly net-worth snapshots. */}
-      {!err && hasData && user && <NetWorthTrend householdId={user.householdId} />}
+      {!err && hasData && user && <NetWorthTrend householdId={user.householdId} points={nwPoints} />}
 
       {!err && !hasData && user?.role !== "owner" && (
         <div className="explain">
@@ -235,36 +276,6 @@ export default function Portfolio() {
           <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 8 }}>
             Debt is secured against specific assets — see <Link href="/manage" style={{ color: "var(--accent)" }}>Assets</Link> for per-asset loan, equity and LTV.
           </div>
-
-          {/* The descriptive overextension signal */}
-          {lead && (
-            <div className={`strip ${stripClass(lead.severity)}`}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" /></svg>
-              {lead.message}
-            </div>
-          )}
-
-          {ops && ops.workOrders.active > 0 && (
-            <div className="strip acc">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M14 6l4 4M3 21l4-1 11-11-3-3L4 17l-1 4z" /></svg>
-              {ops.workOrders.active} open work order{ops.workOrders.active === 1 ? "" : "s"} · {inr(ops.maintenanceSpendYtd)} maintenance YTD — see <Link href="/operations" style={{ color: "var(--accent)", fontWeight: 600 }}>Operations</Link>.
-            </div>
-          )}
-
-          {isOwner && pendingApprovals > 0 && (
-            <div className="strip warn">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
-              {pendingApprovals} request{pendingApprovals === 1 ? "" : "s"} awaiting your approval — see <Link href="/operations" style={{ color: "var(--accent)", fontWeight: 600 }}>Operations → Requests</Link>.
-            </div>
-          )}
-
-          {comp && (comp.overdue > 0 || comp.dueSoon > 0) && (
-            <div className={`strip ${comp.overdue > 0 ? "bad" : "warn"}`}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></svg>
-              {comp.overdue > 0 ? `${comp.overdue} compliance item${comp.overdue === 1 ? "" : "s"} overdue` : `${comp.dueSoon} due within 30 days`}
-              {comp.next ? ` · next: ${comp.next.title} (${comp.next.dueOn})` : ""} — see <Link href="/operations" style={{ color: "var(--accent)", fontWeight: 600 }}>Operations</Link>.
-            </div>
-          )}
         </>
       )}
 
