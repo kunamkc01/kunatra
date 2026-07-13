@@ -16,6 +16,7 @@ import { remindDueCompliance } from './notify.ts';
 import * as admin from './admin.ts';
 import * as access from './access.ts';
 import * as pulse from './pulse.ts';
+import * as personalLoans from './personalLoans.ts';
 import * as documents from './documents.ts';
 import * as tenant from './tenant.ts';
 
@@ -216,6 +217,15 @@ app.get('/api/households/:id/loans', sameHousehold, financialView, h(async (req,
 app.post('/api/households/:id/loans', sameHousehold, manageMoney, h(async (req, res) => res.status(201).json(await repo.createLoan(req.params.id, req.body))));
 app.patch('/api/loans/:id', scopeResource('loans'), manageMoney, h(async (req, res) => res.json(await repo.updateLoan(req.params.id, req.body))));
 app.delete('/api/loans/:id', scopeResource('loans'), manageMoney, h(async (req, res) => { await repo.deleteLoan(req.params.id); res.sendStatus(204); }));
+
+// ---- personal loans given/taken (interest-bearing; fold into net worth) ----
+app.get('/api/households/:id/personal-loans', sameHousehold, financialView, h(async (req, res) => res.json(await personalLoans.personalLoanSummary(req.params.id))));
+app.post('/api/households/:id/personal-loans', sameHousehold, manageMoney, h(async (req, res) => res.status(201).json(await personalLoans.createPersonalLoan(req.params.id, req.body))));
+app.patch('/api/personal-loans/:id', scopeResource('personal_loans'), manageMoney, h(async (req, res) => res.json(await personalLoans.updatePersonalLoan(req.params.id, req.body))));
+app.delete('/api/personal-loans/:id', scopeResource('personal_loans'), manageMoney, h(async (req, res) => { await personalLoans.deletePersonalLoan(req.params.id); res.sendStatus(204); }));
+app.get('/api/personal-loans/:id/payments', scopeResource('personal_loans'), financialView, h(async (req, res) => res.json(await personalLoans.listPayments(req.params.id))));
+app.post('/api/personal-loans/:id/payments', scopeResource('personal_loans'), manageMoney, h(async (req, res) => res.status(201).json(await personalLoans.addPayment(req.params.id, req.body))));
+app.delete('/api/personal-loan-payments/:id', scopeVia('SELECT household_id FROM personal_loan_payments WHERE id = $1'), manageMoney, h(async (req, res) => { await personalLoans.deletePayment(req.params.id); res.sendStatus(204); }));
 
 // ---- operations: vendors --------------------------------------------------
 app.get('/api/households/:id/vendors', sameHousehold, h(async (req, res) => res.json(await ops.listVendors(req.params.id))));

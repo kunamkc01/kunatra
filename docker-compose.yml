@@ -34,6 +34,7 @@ services:
       - ./apps/api/db/valuation_history.sql:/docker-entrypoint-initdb.d/21-valuation_history.sql:ro
       - ./apps/api/db/access_log.sql:/docker-entrypoint-initdb.d/22-access_log.sql:ro
       - ./apps/api/db/landlord.sql:/docker-entrypoint-initdb.d/23-landlord.sql:ro
+      - ./apps/api/db/personal_loans.sql:/docker-entrypoint-initdb.d/24-personal_loans.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U kunatra -d kunatra"]
       interval: 3s

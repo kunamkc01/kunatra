@@ -1,5 +1,6 @@
 import { assess, exposure, investments, type Position, type Asset, type Loan, type AssetClass, type Assessment } from '@atlas/engine';
 import { pool, paiseToRupees, HttpError } from './pool.ts';
+import * as personalLoans from './personalLoans.ts';
 
 interface Member { id: string; name: string; net?: number; expenses?: number; }
 interface Loaded {
@@ -114,7 +115,18 @@ function toPosition(assets: Asset[], loans: Loan[], income?: number, essential?:
 /** The whole household's position, with income aggregated across members. */
 export async function loadPosition(householdId: string): Promise<Position> {
   const l = await load(householdId);
-  return toPosition(l.assets, l.loans, l.hhIncome, l.hhEssential);
+  const pos = toPosition(l.assets, l.loans, l.hhIncome, l.hhEssential);
+  // Personal loans fold into net worth: money lent out is an asset, money
+  // borrowed is a liability. No rent/EMI here — interest is shown separately, so
+  // DSCR and EMI-strain stay about property, not personal-loan interest.
+  const pl = await personalLoans.positionAdjustment(householdId);
+  if (pl.givenPrincipal > 0) {
+    pos.assets = [...pos.assets, { id: 'pl_given', name: 'Personal loans (lent out)', assetClass: 'other', value: pl.givenPrincipal, liquid: false }];
+  }
+  if (pl.takenPrincipal > 0) {
+    pos.loans = [...pos.loans, { id: 'pl_taken', name: 'Personal loans (borrowed)', outstanding: pl.takenPrincipal, emiMonthly: 0 }];
+  }
+  return pos;
 }
 
 /**
