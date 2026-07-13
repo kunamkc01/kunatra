@@ -230,6 +230,18 @@ export interface PersonalLoanPayment {
   note: string | null;
 }
 
+export interface FundScheme { schemeCode: number; schemeName: string }
+export interface FundValuation {
+  schemeCode: string;
+  schemeName: string | null;
+  units: number;
+  invested: number;
+  currentValue: number;
+  latestNav: number;
+  latestNavDate: string;
+  valuedAt: string | null;
+}
+
 export interface Household {
   id: string;
   displayName: string;
@@ -513,6 +525,14 @@ export const api = {
   createAsset: (id: string, b: Partial<Asset>) =>
     req<Asset>(`/api/households/${id}/assets`, { method: "POST", body: JSON.stringify(b) }),
   getAsset: (assetId: string) => req<Asset>(`/api/assets/${assetId}`),
+
+  // mutual-fund / SIP NAV valuation
+  searchFunds: (q: string) => req<FundScheme[]>(`/api/funds/search?q=${encodeURIComponent(q)}`),
+  getFund: (assetId: string) => req<FundValuation | null>(`/api/assets/${assetId}/fund`),
+  setFund: (assetId: string, b: { schemeCode: string; schemeName?: string }) =>
+    req<FundValuation>(`/api/assets/${assetId}/fund`, { method: "POST", body: JSON.stringify(b) }),
+  refreshFund: (assetId: string) => req<FundValuation | null>(`/api/assets/${assetId}/fund/refresh`, { method: "POST" }),
+  unlinkFund: (assetId: string) => req<void>(`/api/assets/${assetId}/fund`, { method: "DELETE" }),
   getPropertyValuation: (assetId: string) => req<PropertyValuation | null>(`/api/assets/${assetId}/valuation`),
   refreshPropertyValuation: (assetId: string) =>
     req<PropertyValuation | null>(`/api/assets/${assetId}/valuation/refresh`, { method: "POST" }),

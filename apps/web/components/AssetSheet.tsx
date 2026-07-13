@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, type Asset, type AssetClass, type Valuation, type Contribution, type AssetPhoto, type Member } from "@/lib/api";
 import { inr } from "@/lib/format";
 import { Sheet } from "./Sheet";
+import { FundPicker } from "./FundPicker";
 
 /** Downscale a chosen image to a reasonable max edge and return a JPEG data URL. */
 function fileToPhoto(file: File, maxEdge = 1280): Promise<string> {
@@ -430,6 +431,7 @@ export function AssetSheet({
         </div>
       </form>
 
+      {existing && (existing.assetClass === "mutual_fund" || existing.assetClass === "sip") && <FundPicker assetId={existing.id} onValued={() => { onChanged?.(); }} />}
       {existing && hasPhotos(existing.assetClass) && <PhotoGallery assetId={existing.id} />}
       {existing && <ValueHistory assetId={existing.id} onChanged={() => { onChanged?.(); }} />}
       {existing && <ContributionLedger assetId={existing.id} onChanged={() => { onChanged?.(); }} />}

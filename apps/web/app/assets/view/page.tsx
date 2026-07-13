@@ -8,6 +8,7 @@ import { useAuth } from "@/lib/useAuth";
 import { Shell } from "@/components/Shell";
 import { AssetSheet, PhotoGallery, ValueHistory, ContributionLedger, hasPhotos } from "@/components/AssetSheet";
 import { DocumentsPanel } from "@/components/DocumentsPanel";
+import { FundPicker } from "@/components/FundPicker";
 import { TenantPanel } from "@/components/TenantPanel";
 
 const pct = (v: number | null | undefined, dp = 1) => (v == null ? "—" : `${v.toFixed(dp)}%`);
@@ -193,6 +194,7 @@ function AssetDetailView() {
       {/* non-property assets keep the vault; photos only for physical things (gold, other) */}
       {!isProperty && asset && (
         <>
+          {canEdit && (asset.assetClass === "mutual_fund" || asset.assetClass === "sip") && <FundPicker assetId={asset.id} onValued={load} />}
           {canManagePhotos && hasPhotos(asset.assetClass) && <PhotoGallery assetId={asset.id} />}
           <DocumentsPanel assetId={asset.id} canEdit={canEdit} />
         </>
