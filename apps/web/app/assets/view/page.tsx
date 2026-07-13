@@ -6,7 +6,7 @@ import { api, type Asset, type AssetDetail, type AssetPulse, type AssetPhoto, ty
 import { inr, inrExact, assetClassLabel } from "@/lib/format";
 import { useAuth } from "@/lib/useAuth";
 import { Shell } from "@/components/Shell";
-import { AssetSheet, PhotoGallery, ValueHistory, ContributionLedger } from "@/components/AssetSheet";
+import { AssetSheet, PhotoGallery, ValueHistory, ContributionLedger, hasPhotos } from "@/components/AssetSheet";
 import { DocumentsPanel } from "@/components/DocumentsPanel";
 import { TenantPanel } from "@/components/TenantPanel";
 
@@ -190,10 +190,10 @@ function AssetDetailView() {
         )}
       </div>
 
-      {/* non-property assets keep the vault + photos below the money */}
+      {/* non-property assets keep the vault; photos only for physical things (gold, other) */}
       {!isProperty && asset && (
         <>
-          {canManagePhotos && <PhotoGallery assetId={asset.id} />}
+          {canManagePhotos && hasPhotos(asset.assetClass) && <PhotoGallery assetId={asset.id} />}
           <DocumentsPanel assetId={asset.id} canEdit={canEdit} />
         </>
       )}

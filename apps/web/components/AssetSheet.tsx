@@ -45,6 +45,10 @@ const CLASSES: { value: AssetClass; label: string; liquidDefault: boolean }[] = 
 
 const HOW = ["bought", "inherited", "gifted", "built", "other"];
 
+/** Only physical things you can photograph — not funds, deposits or cash. */
+export const PHOTO_CLASSES: AssetClass[] = ["real_estate", "gold", "other"];
+export const hasPhotos = (c: AssetClass) => PHOTO_CLASSES.includes(c);
+
 type Group = "property" | "recurring" | "lump" | "deposit" | "cash" | "other";
 const groupOf = (c: AssetClass): Group =>
   c === "real_estate" ? "property"
@@ -426,7 +430,7 @@ export function AssetSheet({
         </div>
       </form>
 
-      {existing && <PhotoGallery assetId={existing.id} />}
+      {existing && hasPhotos(existing.assetClass) && <PhotoGallery assetId={existing.id} />}
       {existing && <ValueHistory assetId={existing.id} onChanged={() => { onChanged?.(); }} />}
       {existing && <ContributionLedger assetId={existing.id} onChanged={() => { onChanged?.(); }} />}
       {!existing && <p className="hint" style={{ marginTop: 14 }}>Save the asset first, then re-open it to add photos, value history and a money-in/out ledger.</p>}
