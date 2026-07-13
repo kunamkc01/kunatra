@@ -9,6 +9,7 @@ import { AssetSheet } from "@/components/AssetSheet";
 import { LoanSheet } from "@/components/LoanSheet";
 import { MemberSheet } from "@/components/MemberSheet";
 import { QuickAddSheet } from "@/components/QuickAddSheet";
+import { PersonalLoansPanel } from "@/components/PersonalLoansPanel";
 
 export default function Assets() {
   const { user, ready } = useAuth();
@@ -255,6 +256,9 @@ export default function Assets() {
               )}
             </div>
           ))}
+
+          {/* Personal loans given / taken — folds into net worth */}
+          {hhId && <PersonalLoansPanel householdId={hhId} canManage={canManageMoney} />}
 
           {/* Cash flow */}
           <CashflowPanel household={household} onSaved={refresh} readOnly={!canManageMoney}

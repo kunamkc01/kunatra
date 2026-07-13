@@ -45,13 +45,14 @@ const CLASSES: { value: AssetClass; label: string; liquidDefault: boolean }[] = 
 
 const HOW = ["bought", "inherited", "gifted", "built", "other"];
 
-type Group = "property" | "recurring" | "lump" | "cash" | "other";
+type Group = "property" | "recurring" | "lump" | "deposit" | "cash" | "other";
 const groupOf = (c: AssetClass): Group =>
   c === "real_estate" ? "property"
     : (["sip", "mutual_fund", "rd", "ppf", "epf", "nps"] as AssetClass[]).includes(c) ? "recurring"
       : c === "cash" ? "cash"
-        : (["equity", "gold", "bonds", "fd"] as AssetClass[]).includes(c) ? "lump"
-          : "other";
+        : (["fd", "bonds"] as AssetClass[]).includes(c) ? "deposit"     // a deposit is opened, not inherited
+          : (["equity", "gold"] as AssetClass[]).includes(c) ? "lump"   // these can genuinely be inherited/gifted
+            : "other";
 
 const thisYear = new Date().getFullYear();
 const monthsSince = (y: number) => Math.max(1, (thisYear - y) * 12 + (new Date().getMonth() + 1));
@@ -104,10 +105,17 @@ export function AssetSheet({
   const [locality, setLocality] = useState(re?.locality ?? "");
   const [ptin, setPtin] = useState(re?.ptin ?? "");
 
+  // Mutual funds can be a monthly SIP or a one-time lump sum.
+  const [mfMode, setMfMode] = useState<"monthly" | "lump">(
+    existing?.assetClass === "mutual_fund" && existing.monthlyContribution == null ? "lump" : "monthly");
+
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const group = groupOf(assetClass);
+  const mfLump = assetClass === "mutual_fund" && mfMode === "lump";
+  // A one-time mutual fund and a deposit both behave like a lump-sum acquisition.
+  const lumpish = group === "lump" || group === "deposit" || mfLump;
 
   function changeClass(c: AssetClass) {
     setAssetClass(c);
@@ -124,9 +132,10 @@ export function AssetSheet({
     const monthlyAmt = monthly ? Number(monthly) : undefined;
 
     // Derive engine fields from the story.
+    const isRecurring = group === "recurring" && !mfLump;
     let costBasis: number | null = null;
-    if (group === "recurring") costBasis = monthlyAmt != null && acqYear ? monthlyAmt * monthsSince(acqYear) : null;
-    else if (group === "property" || group === "lump") costBasis = acqPrice ?? null;
+    if (isRecurring) costBasis = monthlyAmt != null && acqYear ? monthlyAmt * monthsSince(acqYear) : null;
+    else if (group === "property" || lumpish) costBasis = acqPrice ?? null;
 
     const body: Partial<Asset> = {
       name: name.trim(),
@@ -134,10 +143,11 @@ export function AssetSheet({
       value: value ? Number(value) : 0,
       liquid,
       memberId: memberId || null,
-      acquiredHow: group === "property" || group === "lump" ? how : null,
+      // A deposit or one-time fund is simply "bought"; property/gold/equity keep the story.
+      acquiredHow: group === "property" || group === "lump" ? how : lumpish ? "bought" : null,
       acquiredYear: acqYear ?? null,
       costBasis,
-      monthlyContribution: group === "recurring" ? (monthlyAmt ?? null) : null,
+      monthlyContribution: isRecurring ? (monthlyAmt ?? null) : null,
       monthlyRent: group === "property" && usage === "rented" ? (rent ? Number(rent) : null) : null,
       rentTds: group === "property" && usage === "rented" ? (rentTds ? Number(rentTds) : null) : null,
       tenantName: group === "property" && usage === "rented" ? (tenantName.trim() || null) : null,
@@ -161,9 +171,9 @@ export function AssetSheet({
       } else {
         const created = await api.createAsset(householdId, body);
         // Turn the acquisition story into a dated ledger so returns (XIRR) work.
-        if (acqYear && (group === "property" || group === "lump") && acqPrice) {
-          await api.addContribution(created.id, { amount: acqPrice, on: `${acqYear}-01-01`, note: how });
-        } else if (acqYear && group === "recurring" && monthlyAmt) {
+        if (acqYear && (group === "property" || lumpish) && acqPrice) {
+          await api.addContribution(created.id, { amount: acqPrice, on: `${acqYear}-01-01`, note: group === "property" || group === "lump" ? how : "invested" });
+        } else if (acqYear && isRecurring && monthlyAmt) {
           await api.addSipSchedule(created.id, { amount: monthlyAmt, startOn: `${acqYear}-01-01` });
         }
       }
@@ -247,24 +257,62 @@ export function AssetSheet({
           </>
         )}
 
-        {/* ---- RECURRING ---- */}
+        {/* ---- RECURRING (SIP/RD/PPF/EPF/NPS + mutual funds) ---- */}
         {group === "recurring" && (
           <>
-            <p className="story">You've been building this up over time.</p>
+            {assetClass === "mutual_fund" && (
+              <div className="subtabs" style={{ margin: "0 0 12px" }}>
+                <button type="button" className={`subtab ${mfMode === "monthly" ? "active" : ""}`} onClick={() => setMfMode("monthly")}>Monthly (SIP)</button>
+                <button type="button" className={`subtab ${mfMode === "lump" ? "active" : ""}`} onClick={() => setMfMode("lump")}>One-time (lump sum)</button>
+              </div>
+            )}
+            {mfLump ? (
+              <>
+                <p className="story">A one-time investment.</p>
+                <div className="row2">
+                  <div className="field"><label>Amount invested (₹)</label><input inputMode="numeric" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="200000" /></div>
+                  <div className="field"><label>In which year?</label><input inputMode="numeric" value={year} onChange={(e) => setYear(e.target.value)} placeholder={String(thisYear - 3)} /></div>
+                </div>
+                <div className="field">
+                  <label>Worth today (₹)</label>
+                  <input inputMode="numeric" value={value} onChange={(e) => setValue(e.target.value)} placeholder="320000" />
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="story">You've been building this up over time.</p>
+                <div className="row2">
+                  <div className="field">
+                    <label>Investing per month (₹)</label>
+                    <input inputMode="numeric" value={monthly} onChange={(e) => setMonthly(e.target.value)} placeholder="15000" />
+                  </div>
+                  <div className="field">
+                    <label>Since which year?</label>
+                    <input inputMode="numeric" value={year} onChange={(e) => setYear(e.target.value)} placeholder={String(thisYear - 3)} />
+                  </div>
+                </div>
+                <div className="field">
+                  <label>Worth today (₹)</label>
+                  <input inputMode="numeric" value={value} onChange={(e) => setValue(e.target.value)} placeholder="700000" />
+                  <div className="hint">We'll build a monthly schedule from your start year to compute your return (XIRR).</div>
+                </div>
+              </>
+            )}
+          </>
+        )}
+
+        {/* ---- DEPOSIT (FD/bonds) — opened, not inherited ---- */}
+        {group === "deposit" && (
+          <>
+            <p className="story">A deposit you opened.</p>
             <div className="row2">
-              <div className="field">
-                <label>Investing per month (₹)</label>
-                <input inputMode="numeric" value={monthly} onChange={(e) => setMonthly(e.target.value)} placeholder="15000" />
-              </div>
-              <div className="field">
-                <label>Since which year?</label>
-                <input inputMode="numeric" value={year} onChange={(e) => setYear(e.target.value)} placeholder={String(thisYear - 3)} />
-              </div>
+              <div className="field"><label>Amount deposited (₹)</label><input inputMode="numeric" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="500000" /></div>
+              <div className="field"><label>Opened in year</label><input inputMode="numeric" value={year} onChange={(e) => setYear(e.target.value)} placeholder={String(thisYear - 2)} /></div>
             </div>
             <div className="field">
               <label>Worth today (₹)</label>
-              <input inputMode="numeric" value={value} onChange={(e) => setValue(e.target.value)} placeholder="700000" />
-              <div className="hint">We'll build a monthly schedule from your start year to compute your return (XIRR).</div>
+              <input inputMode="numeric" value={value} onChange={(e) => setValue(e.target.value)} placeholder="540000" />
+              <div className="hint">Principal plus any interest accrued so far.</div>
             </div>
           </>
         )}

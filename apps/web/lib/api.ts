@@ -190,6 +190,46 @@ export interface Loan {
   memberId: string | null;
 }
 
+export type LoanDirection = "given" | "taken";
+export type InterestFrequency = "monthly" | "quarterly" | "half_yearly" | "yearly";
+export interface PersonalLoan {
+  id: string;
+  householdId: string;
+  direction: LoanDirection;
+  counterparty: string;
+  principal: number;
+  ratePct: number | null;
+  frequency: InterestFrequency;
+  startedOn: string | null;
+  memberId: string | null;
+  note: string | null;
+  interestPerPeriod: number;
+  monthlyInterest: number;
+  annualInterest: number;
+}
+export interface PersonalLoanSummary {
+  loans: PersonalLoan[];
+  given: PersonalLoan[];
+  taken: PersonalLoan[];
+  givenPrincipal: number;
+  takenPrincipal: number;
+  netPrincipal: number;
+  monthlyInterestIn: number;
+  monthlyInterestOut: number;
+  annualInterestIn: number;
+  annualInterestOut: number;
+  interestReceivedLast12: number;
+  interestPaidLast12: number;
+}
+export interface PersonalLoanPayment {
+  id: string;
+  loanId: string;
+  paidOn: string;
+  amount: number;
+  kind: "interest" | "principal";
+  note: string | null;
+}
+
 export interface Household {
   id: string;
   displayName: string;
@@ -512,6 +552,18 @@ export const api = {
   updateLoan: (loanId: string, b: Partial<Loan>) =>
     req<Loan>(`/api/loans/${loanId}`, { method: "PATCH", body: JSON.stringify(b) }),
   deleteLoan: (loanId: string) => req<void>(`/api/loans/${loanId}`, { method: "DELETE" }),
+
+  // personal loans given / taken
+  personalLoans: (id: string) => req<PersonalLoanSummary>(`/api/households/${id}/personal-loans`),
+  createPersonalLoan: (id: string, b: Partial<PersonalLoan>) =>
+    req<PersonalLoan>(`/api/households/${id}/personal-loans`, { method: "POST", body: JSON.stringify(b) }),
+  updatePersonalLoan: (loanId: string, b: Partial<PersonalLoan>) =>
+    req<PersonalLoan>(`/api/personal-loans/${loanId}`, { method: "PATCH", body: JSON.stringify(b) }),
+  deletePersonalLoan: (loanId: string) => req<void>(`/api/personal-loans/${loanId}`, { method: "DELETE" }),
+  listPersonalLoanPayments: (loanId: string) => req<PersonalLoanPayment[]>(`/api/personal-loans/${loanId}/payments`),
+  addPersonalLoanPayment: (loanId: string, b: { paidOn: string; amount: number; kind?: string; note?: string }) =>
+    req<PersonalLoanPayment>(`/api/personal-loans/${loanId}/payments`, { method: "POST", body: JSON.stringify(b) }),
+  deletePersonalLoanPayment: (id: string) => req<void>(`/api/personal-loan-payments/${id}`, { method: "DELETE" }),
 
   // operations: vendors
   listVendors: (id: string) => req<Vendor[]>(`/api/households/${id}/vendors`),
