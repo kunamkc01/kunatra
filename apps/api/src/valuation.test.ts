@@ -117,6 +117,19 @@ test('property valuation flow', { skip: hasDb ? false : 'DATABASE_URL not set' }
       assert.equal((await call('POST', `/api/assets/${assetId}/valuation/feedback`, { feedback: 'meh' }, ownerTok)).status, 400);
     });
 
+    await t.test('no city/locality/address → not estimated (never guesses a location)', async () => {
+      // A named property with no location must NOT be sent to the model — it would
+      // default to a metro (Hyderabad). Mark unavailable with a location prompt.
+      const b = await call('POST', `/api/households/${householdId}/assets`, { name: 'Seaside Cottage', assetClass: 'real_estate', value: 8000000 }, ownerTok);
+      const v = await waitForStatus(b.body.id, 'unavailable', ownerTok);
+      assert.equal(v.estimatedValue, null);
+      assert.ok(/city or locality/i.test(v.summary ?? ''), 'unavailable reason should ask for a location');
+      // adding a city unlocks the estimate (location change forces it)
+      await call('PATCH', `/api/assets/${b.body.id}`, { realEstate: { city: 'Pune', locality: 'Kharadi', sqft: 1100 } }, ownerTok);
+      const v2 = await waitForStatus(b.body.id, 'ok', ownerTok);
+      assert.equal(v2.estimatedValue, 9500000);
+    });
+
     await t.test('garbage from the model (twice) → unavailable, not stored junk', async () => {
       _setProviderForTests(async () => 'the market is vibrant and prices are up!');
       const b = await call('POST', `/api/households/${householdId}/assets`, {

@@ -178,10 +178,28 @@ async function processValuation(assetId: string): Promise<void> {
   }
 }
 
+/** A property has a location the model can anchor on — a city, a locality, or a full address. */
+export function hasResolvableLocation(i: ValuationInput): boolean {
+  const s = (v: string | null) => typeof v === 'string' && v.trim() !== '';
+  return s(i.city) || s(i.locality) || s(i.address);
+}
+
 /** Queue an estimate for a property (no-op for non-real-estate). Fire-and-forget. */
 export async function requestValuation(assetId: string): Promise<boolean> {
   const loaded = await loadInput(assetId);
   if (!loaded) return false;
+  // Without a location we'd only be guessing — and the model defaults to a metro
+  // (Hyderabad). The property name is never sent (it carries the family name), so
+  // it can't supply a location either. Mark unavailable instead of fabricating.
+  if (!hasResolvableLocation(loaded.input)) {
+    await db().query(
+      `INSERT INTO property_valuations (asset_id, household_id, status, summary, generated_at, updated_at)
+       VALUES ($1, $2, 'unavailable', $3, NULL, now())
+       ON CONFLICT (asset_id) DO UPDATE SET status = 'unavailable', summary = $3, generated_at = NULL, updated_at = now()`,
+      [assetId, loaded.householdId, 'Add the city or locality (or a full address) to get an estimate — Kunatra won’t guess a location.']
+    );
+    return true;
+  }
   await db().query(
     `INSERT INTO property_valuations (asset_id, household_id, status)
      VALUES ($1, $2, 'pending')

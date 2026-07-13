@@ -46,7 +46,7 @@ test('net-worth history & rent-vs-market gap', { skip: hasDb ? false : 'DATABASE
     let assetId = '';
     await t.test('snapshot captures the position; same-month reruns upsert', async () => {
       const a = await call('POST', `/api/households/${householdId}/assets`,
-        { name: 'Flat', assetClass: 'real_estate', value: 9000000, monthlyRent: 25000 }, ownerTok);
+        { name: 'Flat', assetClass: 'real_estate', value: 9000000, monthlyRent: 25000, realEstate: { city: 'Hyderabad', locality: 'Gachibowli', sqft: 1200 } }, ownerTok);
       assetId = a.body.id;
       await call('POST', `/api/households/${householdId}/loans`, { name: 'Home', outstanding: 4000000, emiMonthly: 40000 }, ownerTok);
 

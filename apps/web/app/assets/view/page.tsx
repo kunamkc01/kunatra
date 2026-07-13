@@ -395,7 +395,7 @@ function PropertyInsights({ assetId, ownValue, ownRent, canEdit, canSeeFinancial
 
       {v?.status === "unavailable" && (
         <div>
-          <div className="hint" style={{ padding: "6px 0" }}>We couldn't produce a reliable estimate for this property{v.generatedAt ? "" : " yet"}. Adding city, locality, type and area (Edit details) helps a lot.</div>
+          <div className="hint" style={{ padding: "6px 0" }}>{v.summary ? v.summary : <>We couldn&apos;t produce a reliable estimate for this property{v.generatedAt ? "" : " yet"}. Adding city, locality, type and area (Edit details) helps a lot.</>}</div>
           {canEdit && <button className="btn small" type="button" onClick={refresh} disabled={busy}>Try again</button>}
         </div>
       )}
