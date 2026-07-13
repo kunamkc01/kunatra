@@ -17,6 +17,7 @@ import * as admin from './admin.ts';
 import * as access from './access.ts';
 import * as pulse from './pulse.ts';
 import * as personalLoans from './personalLoans.ts';
+import * as funds from './funds.ts';
 import * as documents from './documents.ts';
 import * as tenant from './tenant.ts';
 
@@ -172,6 +173,13 @@ app.patch('/api/assets/:id', editAssets, scopeOwned('assets'), h(async (req, res
 }));
 
 // ---- AI property-valuation (estimate lives beside the user's value) -------
+// ---- mutual-fund / SIP NAV valuation (units × latest NAV) ------------------
+app.get('/api/funds/search', h(async (req, res) => res.json(await funds.searchSchemes(String(req.query.q ?? '')))));
+app.get('/api/assets/:id/fund', scopeResource('assets'), h(async (req, res) => res.json(await funds.getFund(req.params.id))));
+app.post('/api/assets/:id/fund', editAssets, scopeOwned('assets'), h(async (req, res) => res.json(await funds.setFund(req.params.id, req.body))));
+app.post('/api/assets/:id/fund/refresh', editAssets, scopeOwned('assets'), h(async (req, res) => { await funds.refreshFundValue(req.params.id); res.json(await funds.getFund(req.params.id)); }));
+app.delete('/api/assets/:id/fund', editAssets, scopeOwned('assets'), h(async (req, res) => { await funds.unlinkFund(req.params.id); res.sendStatus(204); }));
+
 app.get('/api/assets/:id/valuation', scopeResource('assets'), h(async (req, res) => res.json(await valuation.getValuation(req.params.id))));
 app.post('/api/assets/:id/valuation/refresh', editAssets, scopeOwned('assets'), h(async (req, res) => res.json(await valuation.refreshValuation(req.params.id))));
 app.post('/api/assets/:id/valuation/feedback', editAssets, scopeOwned('assets'), h(async (req, res) => res.json(await valuation.saveFeedback(req.params.id, req.body))));
@@ -317,7 +325,7 @@ if (isMain) {
   app.listen(port, () => console.log(`Kunatra API on :${port}`));
   // Compliance reminders: sweep on startup, then twice a day (the reminded_on
   // guard keeps it to one notification per item per day).
-  const dailySweeps = () => { remindDueCompliance(); rent.generateRentDue(); ops.sweepFixedWorkOrders(); valuation.sweepValuations(); history.sweepSnapshots(); access.purgeOldEvents(); };
+  const dailySweeps = () => { remindDueCompliance(); rent.generateRentDue(); ops.sweepFixedWorkOrders(); valuation.sweepValuations(); funds.sweepFundValues(); history.sweepSnapshots(); access.purgeOldEvents(); };
   dailySweeps();
   setInterval(dailySweeps, 12 * 60 * 60 * 1000).unref();
 }
