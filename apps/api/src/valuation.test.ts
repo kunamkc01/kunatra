@@ -86,6 +86,29 @@ test('property valuation flow', { skip: hasDb ? false : 'DATABASE_URL not set' }
       assert.equal(r.status, 429);
     });
 
+    await t.test('changing the address forces a fresh estimate (bypasses the rate limit)', async () => {
+      // A new estimate exists (just generated) — a plain refresh would 429. But the
+      // location is the estimate's core input, so editing it must re-estimate now.
+      _setProviderForTests(async () => JSON.stringify({ ...JSON.parse(GOOD), estimatedValue: 12000000, lowValue: 11000000, highValue: 13000000 }));
+      const p = await call('PATCH', `/api/assets/${assetId}`, { realEstate: { address: '99 New Road', sqft: 1450, city: 'Hyderabad', locality: 'Gachibowli' } }, ownerTok);
+      assert.equal(p.status, 200);
+      // poll until the estimate reflects the new locality's value
+      let got = null;
+      for (let i = 0; i < 40; i++) {
+        const v = (await call('GET', `/api/assets/${assetId}/valuation`, undefined, ownerTok)).body;
+        if (v?.status === 'ok' && v.estimatedValue === 12000000) { got = v; break; }
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      assert.ok(got, 'estimate should have refreshed after the address changed');
+      _setProviderForTests(async () => GOOD);
+    });
+
+    await t.test('editing a non-location field does NOT force a re-estimate', async () => {
+      // name change only → no new estimate; the rate limit still applies to refresh
+      await call('PATCH', `/api/assets/${assetId}`, { name: 'Renamed flat' }, ownerTok);
+      assert.equal((await call('POST', `/api/assets/${assetId}/valuation/refresh`, undefined, ownerTok)).status, 429);
+    });
+
     await t.test('feedback is recorded', async () => {
       const f = await call('POST', `/api/assets/${assetId}/valuation/feedback`, { feedback: 'too_high', userValue: 8800000 }, ownerTok);
       assert.equal(f.status, 200);

@@ -151,9 +151,21 @@ app.get('/api/assets/:id/pulse', scopeResource('assets'), h(async (req, res) => 
 app.get('/api/assets/:id', scopeResource('assets'), h(async (req, res) => res.json(await repo.getAsset(req.params.id))));
 app.get('/api/assets/:id/detail', scopeResource('assets'), h(async (req, res) => res.json(await assetDetail(req.params.id, new Date()))));
 app.patch('/api/assets/:id', editAssets, scopeOwned('assets'), h(async (req, res) => {
+  // Grab the prior profile only when a real-estate profile is being written, so we can tell if the location changed.
+  const before = 'realEstate' in req.body ? await repo.getAsset(req.params.id).catch(() => null) : null;
   const updated = await repo.updateAsset(req.params.id, req.body);
-  if (updated.assetClass === 'real_estate' && ('realEstate' in req.body || 'monthlyRent' in req.body)) {
-    void valuation.requestIfStale(updated.id);
+  if (updated.assetClass === 'real_estate') {
+    const re = req.body.realEstate;
+    const norm = (v: any) => (v == null || v === '' ? null : v);
+    // The estimate's core inputs are the location and size — if they changed, force a fresh one now.
+    const locationChanged = 'realEstate' in req.body && re && before && (
+      norm(re.address) !== norm(before.realEstate?.address) ||
+      norm(re.city) !== norm(before.realEstate?.city) ||
+      norm(re.locality) !== norm(before.realEstate?.locality) ||
+      norm(re.sqft) !== norm(before.realEstate?.sqft)
+    );
+    if (locationChanged) void valuation.requestOnLocationChange(updated.id);
+    else if ('realEstate' in req.body || 'monthlyRent' in req.body) void valuation.requestIfStale(updated.id);
   }
   res.json(updated);
 }));

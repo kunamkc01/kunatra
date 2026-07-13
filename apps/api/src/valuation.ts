@@ -202,6 +202,17 @@ export async function requestIfStale(assetId: string): Promise<void> {
   await requestValuation(assetId);
 }
 
+/**
+ * The location or size — the estimate's core inputs — changed, so force a fresh
+ * estimate now, bypassing the daily rate limit. (A stray double-click can't spam
+ * this because the value has to actually change to get here.)
+ */
+export async function requestOnLocationChange(assetId: string): Promise<void> {
+  const { rows } = await db().query(`SELECT status FROM property_valuations WHERE asset_id = $1`, [assetId]);
+  if (rows[0]?.status === 'pending') return; // one already running
+  await requestValuation(assetId);
+}
+
 const valuationRow = (r: any) => ({
   assetId: r.asset_id,
   status: r.status,
