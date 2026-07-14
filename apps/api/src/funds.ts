@@ -67,7 +67,14 @@ export function parseAmfiDirectory(text: string): Scheme[] {
   return out;
 }
 
-/** Rank matches: every token must appear; earlier and tighter matches first. */
+// Fund houses and AMFI disagree on plan naming: ICICI lists its growth plans as
+// "Cumulative Option", and older sheets say "Dividend" where apps say "IDCW".
+const TOKEN_ALIASES: Record<string, string[]> = {
+  growth: ['cumulative'], cumulative: ['growth'],
+  idcw: ['dividend'], dividend: ['idcw'],
+};
+
+/** Rank matches: every token (or an alias) must appear; earlier and tighter matches first. */
 export function searchDirectory(list: Scheme[], query: string, limit = 25): Scheme[] {
   const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
   if (!tokens.length) return [];
@@ -77,7 +84,8 @@ export function searchDirectory(list: Scheme[], query: string, limit = 25): Sche
     let score = 0;
     let ok = true;
     for (const t of tokens) {
-      const i = name.indexOf(t);
+      let i = name.indexOf(t);
+      if (i === -1) for (const alias of TOKEN_ALIASES[t] ?? []) { i = name.indexOf(alias); if (i !== -1) break; }
       if (i === -1) { ok = false; break; }
       score += i;
     }

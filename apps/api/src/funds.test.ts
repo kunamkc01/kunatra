@@ -52,6 +52,17 @@ test('AMFI directory parse + local search ranking (pure)', () => {
   assert.ok(hits.every((s) => /Parag Parikh/.test(s.schemeName)));
   assert.equal(searchDirectory(dir, 'smallcap icici')[0].schemeCode, 106823);
   assert.equal(searchDirectory(dir, 'no such fund').length, 0);
+
+  // ICICI names growth plans "Cumulative Option" — searching "growth" must still find them
+  const icici = [
+    { schemeCode: 145896, schemeName: 'ICICI Prudential India Opportunities Fund - Cumulative Option' },
+    { schemeCode: 145899, schemeName: 'ICICI Prudential India Opportunities Fund - IDCW Option' },
+  ];
+  const g = searchDirectory(icici, 'india opportunities growth');
+  assert.equal(g.length, 1);
+  assert.equal(g[0].schemeCode, 145896);
+  // and the reverse: "dividend" finds IDCW plans
+  assert.equal(searchDirectory(icici, 'opportunities dividend')[0].schemeCode, 145899);
 });
 
 test('fund valuation: units × latest NAV, auto-set', { skip: hasDb ? false : 'DATABASE_URL not set' }, async (t) => {
