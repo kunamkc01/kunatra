@@ -22,8 +22,14 @@ export function FundPicker({ assetId, onValued }: { assetId: string; onValued?: 
     if (v.trim().length < 3) { setResults([]); return; }
     setSearching(true);
     timer.current = setTimeout(async () => {
-      try { setResults(await api.searchFunds(v.trim())); } catch { setResults([]); }
-      finally { setSearching(false); }
+      try {
+        const r = await api.searchFunds(v.trim());
+        setResults(r);
+        if (r.length === 0) setErr("No matching fund — try fewer words (e.g. just the fund house + strategy).");
+      } catch {
+        setResults([]);
+        setErr("Fund search hiccuped — give it a second and type again.");
+      } finally { setSearching(false); }
     }, 350);
   }
 

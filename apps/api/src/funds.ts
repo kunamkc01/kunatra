@@ -35,11 +35,69 @@ const liveHistory: HistoryProvider = async (schemeCode) => {
 };
 
 const liveSearch: SearchProvider = async (query) => {
-  const res = await fetch(`https://api.mfapi.in/mf/search?q=${encodeURIComponent(query)}`);
+  const res = await fetchWithTimeout(`https://api.mfapi.in/mf/search?q=${encodeURIComponent(query)}`, 8000);
   if (!res.ok) throw new Error(`mfapi search ${res.status}`);
   const j: any = await res.json();
   return (Array.isArray(j) ? j : []).slice(0, 25).map((r: any) => ({ schemeCode: r.schemeCode, schemeName: r.schemeName }));
 };
+
+function fetchWithTimeout(url: string, ms: number): Promise<Response> {
+  return fetch(url, { signal: AbortSignal.timeout(ms) });
+}
+
+// ---- scheme directory (search) ----------------------------------------------
+// The remote search endpoint is a free community API and flakes under load, so
+// search runs against the OFFICIAL AMFI directory instead: fetched once, held in
+// memory, refreshed daily. Format: code;isin;isin;name;nav;date (headers lack ';').
+const AMFI_URL = 'https://portal.amfiindia.com/spages/NAVAll.txt';
+const DIRECTORY_TTL_MS = 24 * 3600_000;
+let directory: Scheme[] = [];
+let directoryAt = 0;
+
+/** Parse AMFI's NAVAll.txt into schemes (pure — tested directly). */
+export function parseAmfiDirectory(text: string): Scheme[] {
+  const out: Scheme[] = [];
+  for (const line of text.split('\n')) {
+    const parts = line.split(';');
+    if (parts.length < 5) continue;                    // section/AMC headers
+    const code = Number(parts[0]);
+    const name = (parts[3] ?? '').trim();
+    if (Number.isFinite(code) && code > 0 && name) out.push({ schemeCode: code, schemeName: name });
+  }
+  return out;
+}
+
+/** Rank matches: every token must appear; earlier and tighter matches first. */
+export function searchDirectory(list: Scheme[], query: string, limit = 25): Scheme[] {
+  const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!tokens.length) return [];
+  const scored: { s: Scheme; score: number }[] = [];
+  for (const s of list) {
+    const name = s.schemeName.toLowerCase();
+    let score = 0;
+    let ok = true;
+    for (const t of tokens) {
+      const i = name.indexOf(t);
+      if (i === -1) { ok = false; break; }
+      score += i;
+    }
+    if (ok) scored.push({ s, score: score + name.length / 10 });
+  }
+  return scored.sort((a, b) => a.score - b.score).slice(0, limit).map((x) => x.s);
+}
+
+export async function ensureDirectory(): Promise<Scheme[]> {
+  if (directory.length && Date.now() - directoryAt < DIRECTORY_TTL_MS) return directory;
+  try {
+    const res = await fetchWithTimeout(AMFI_URL, 15000);
+    if (!res.ok) throw new Error(`amfi ${res.status}`);
+    const parsed = parseAmfiDirectory(await res.text());
+    if (parsed.length > 1000) { directory = parsed; directoryAt = Date.now(); }
+  } catch (e: any) {
+    console.error(`[funds] AMFI directory refresh failed: ${e?.message}`);
+  }
+  return directory;
+}
 
 // ---- cache ------------------------------------------------------------------
 const CACHE_TTL_MS = 12 * 3600_000;
@@ -104,7 +162,10 @@ export async function computeValuation(assetId: string, schemeCode: string, sche
 
 export async function searchSchemes(query: string): Promise<Scheme[]> {
   if (!query || query.trim().length < 3) return [];
-  return (_search ?? liveSearch)(query.trim());
+  if (_search) return _search(query.trim());            // test seam
+  const dir = await ensureDirectory();
+  if (dir.length) return searchDirectory(dir, query.trim());
+  return liveSearch(query.trim());                      // directory unavailable → best effort
 }
 
 /** Link a scheme to an asset, compute its value and set it. Auto-valued from here on. */

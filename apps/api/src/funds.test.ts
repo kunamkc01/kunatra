@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
 import { app } from './index.ts';
-import { _setFundProvidersForTests, navOnOrBefore, type NavPoint } from './funds.ts';
+import { _setFundProvidersForTests, navOnOrBefore, parseAmfiDirectory, searchDirectory, type NavPoint } from './funds.ts';
 import { sweepSipContributions } from './repo.ts';
 
 const hasDb = !!process.env.DATABASE_URL;
@@ -26,6 +26,32 @@ test('navOnOrBefore picks the nearest earlier trading day (pure)', () => {
   assert.equal(navOnOrBefore(HIST, '2023-01-01'), 15);
   assert.equal(navOnOrBefore(HIST, '2030-01-01'), 20);  // after latest → latest
   assert.equal(navOnOrBefore(HIST, '2019-01-01'), 10);  // before first → earliest
+});
+
+test('AMFI directory parse + local search ranking (pure)', () => {
+  const sample = [
+    'Scheme Code;ISIN Div Payout/ ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date',
+    ' ',
+    'Open Ended Schemes(Equity Scheme - Flexi Cap Fund)',
+    ' ',
+    'PPFAS Mutual Fund',
+    ' ',
+    '122639;INF879O01027;-;Parag Parikh Flexi Cap Fund - Direct Plan - Growth;90.9438;13-Jul-2026',
+    '122640;INF879O01019;-;Parag Parikh Flexi Cap Fund - Regular Plan - Growth;84.1200;13-Jul-2026',
+    '106823;INF109K01BL4;-;ICICI Prudential Smallcap Fund - Growth;89.3000;13-Jul-2026',
+    'garbage line without separators',
+    ';;;;;',
+  ].join('\n');
+  const dir = parseAmfiDirectory(sample);
+  assert.equal(dir.length, 3);                                   // headers + junk skipped
+  assert.deepEqual(dir[0], { schemeCode: 122639, schemeName: 'Parag Parikh Flexi Cap Fund - Direct Plan - Growth' });
+
+  // all tokens must match, case-insensitive, any order
+  const hits = searchDirectory(dir, 'flexi parag');
+  assert.equal(hits.length, 2);
+  assert.ok(hits.every((s) => /Parag Parikh/.test(s.schemeName)));
+  assert.equal(searchDirectory(dir, 'smallcap icici')[0].schemeCode, 106823);
+  assert.equal(searchDirectory(dir, 'no such fund').length, 0);
 });
 
 test('fund valuation: units × latest NAV, auto-set', { skip: hasDb ? false : 'DATABASE_URL not set' }, async (t) => {
