@@ -5,7 +5,7 @@ const BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:4100";
 
 export type AssetClass =
   | "real_estate" | "mutual_fund" | "sip" | "equity" | "epf" | "ppf"
-  | "nps" | "fd" | "rd" | "bonds" | "cash" | "gold" | "insurance" | "other";
+  | "nps" | "fd" | "rd" | "bonds" | "cash" | "gold" | "insurance" | "receivable" | "other";
 
 export interface Valuation {
   id: string;

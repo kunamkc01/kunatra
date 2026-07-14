@@ -7,6 +7,8 @@ test('net worth = gross assets minus debt', () => {
   assert.equal(nw.grossAssets, 11_200_000);
   assert.equal(nw.totalDebt, 5_800_000);
   assert.equal(nw.netWorth, 5_400_000);
+  // firm + perceived always reassembles the headline
+  assert.equal(nw.firmNetWorth + nw.perceivedAssets, nw.netWorth);
   assert.equal(nw.liquidAssets, 900_000);
 });
 

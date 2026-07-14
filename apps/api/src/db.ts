@@ -121,7 +121,7 @@ export async function loadPosition(householdId: string): Promise<Position> {
   // DSCR and EMI-strain stay about property, not personal-loan interest.
   const pl = await personalLoans.positionAdjustment(householdId);
   if (pl.givenPrincipal > 0) {
-    pos.assets = [...pos.assets, { id: 'pl_given', name: 'Personal loans (lent out)', assetClass: 'other', value: pl.givenPrincipal, liquid: false }];
+    pos.assets = [...pos.assets, { id: 'pl_given', name: 'Personal loans (lent out)', assetClass: 'receivable', value: pl.givenPrincipal, liquid: false }];
   }
   if (pl.takenPrincipal > 0) {
     pos.loans = [...pos.loans, { id: 'pl_taken', name: 'Personal loans (borrowed)', outstanding: pl.takenPrincipal, emiMonthly: 0 }];

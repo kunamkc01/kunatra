@@ -1,4 +1,4 @@
-import type { Position, NetWorth, AssetClass } from './types.ts';
+import { PERCEIVED_CLASSES, type Position, type NetWorth, type AssetClass } from './types.ts';
 
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 
@@ -19,12 +19,18 @@ export function netWorth(p: Position): NetWorth {
     }))
     .sort((x, y) => y.value - x.value);
 
+  // Perceived = valued by opinion (untested until a sale); firm = the rest, net of
+  // ALL debt — debt is absolute, so it weighs against the absolute side.
+  const perceivedAssets = sum(p.assets.filter((a) => PERCEIVED_CLASSES.includes(a.assetClass)).map((a) => a.value));
+
   return {
     grossAssets,
     totalDebt,
     netWorth: grossAssets - totalDebt,
     liquidAssets,
     illiquidAssets: grossAssets - liquidAssets,
+    perceivedAssets,
+    firmNetWorth: grossAssets - perceivedAssets - totalDebt,
     allocation,
   };
 }

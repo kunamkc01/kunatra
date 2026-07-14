@@ -26,6 +26,7 @@ const CLASS_LABELS: Record<string, string> = {
   cash: "Cash & savings",
   gold: "Gold",
   insurance: "Insurance",
+  receivable: "Lent out (receivable)",
   other: "Other",
 };
 

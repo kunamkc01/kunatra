@@ -15,7 +15,15 @@ export type AssetClass =
   | 'cash'
   | 'gold'
   | 'insurance'
+  | 'receivable'
   | 'other';
+
+/**
+ * Perceived value: an opinion untested until an actual sale (a property at the
+ * owner's estimate, collectibles). Everything else is absolute or derivable —
+ * a balance, principal, or units × a live market quote.
+ */
+export const PERCEIVED_CLASSES: AssetClass[] = ['real_estate', 'other'];
 
 export interface Asset {
   id: string;
@@ -86,6 +94,10 @@ export interface NetWorth {
   netWorth: number;
   liquidAssets: number;
   illiquidAssets: number;
+  /** Assets valued by opinion (property at your value, collectibles) — untested until a sale. */
+  perceivedAssets: number;
+  /** Absolute or derivable assets (balances, principal, units × market quote), net of ALL debt. */
+  firmNetWorth: number;
   allocation: { assetClass: AssetClass; value: number; pct: number }[];
 }
 

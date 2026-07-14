@@ -113,6 +113,12 @@ export default function Portfolio() {
               </span>
             </div>
           )}
+          {/* Firm vs perceived — a property's value is an opinion until it actually sells. */}
+          {hasData && nw!.perceivedAssets > 0 && (
+            <div className="nw-split" title="Firm = balances, deposits, funds at market NAV, receivables — net of all debt. Perceived = property (and collectibles) at your own valuation, untested until an actual sale.">
+              <b className="num">{inr(nw!.firmNetWorth)}</b> firm · <b className="num" style={{ color: "var(--seal)" }}>{inr(nw!.perceivedAssets)}</b> perceived <span className="muted">(property at your value — real only when sold)</span>
+            </div>
+          )}
         </div>
       </div>
 
