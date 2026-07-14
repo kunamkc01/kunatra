@@ -513,6 +513,41 @@ export async function addSipSchedule(assetId: string, body: any) {
   return { added: dates.length };
 }
 
+/**
+ * Daily: keep SIP-style ledgers current. Any asset with a monthly contribution
+ * and at least one 'SIP'-noted row is an auto series — fill every month missing
+ * between its first installment and today (same day-of-month, clamped), at the
+ * CURRENT monthly amount, then re-value a linked fund. Hand-entered ledgers
+ * (no 'SIP' note) are never touched.
+ */
+export async function sweepSipContributions(): Promise<number> {
+  const { rows } = await db().query(
+    `SELECT a.id, a.monthly_contribution_paise,
+            min(c.contributed_on) FILTER (WHERE c.note = 'SIP') AS anchor,
+            array_agg(DISTINCT to_char(c.contributed_on, 'YYYY-MM')) FILTER (WHERE c.note = 'SIP') AS sip_months
+       FROM assets a JOIN contributions c ON c.asset_id = a.id
+      WHERE a.monthly_contribution_paise > 0
+      GROUP BY a.id
+     HAVING count(*) FILTER (WHERE c.note = 'SIP') > 0`);
+  const today = new Date().toISOString().slice(0, 10);
+  let added = 0;
+  for (const r of rows) {
+    const have = new Set<string>(r.sip_months ?? []);
+    const missing = monthlySchedule(String(r.anchor).slice(0, 10), today).filter((d) => !have.has(d.slice(0, 7)));
+    for (const on of missing) {
+      await db().query(
+        `INSERT INTO contributions (asset_id, amount_paise, contributed_on, note) VALUES ($1,$2,$3,'SIP')`,
+        [r.id, r.monthly_contribution_paise, on]);
+      added++;
+    }
+    if (missing.length) {
+      const { refreshFundValue } = await import('./funds.ts');
+      await refreshFundValue(r.id).catch(() => {});
+    }
+  }
+  return added;
+}
+
 // ---- loans ----------------------------------------------------------------
 
 const loanRow = (r: any) => ({

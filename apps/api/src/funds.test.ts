@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
 import { app } from './index.ts';
 import { _setFundProvidersForTests, navOnOrBefore, type NavPoint } from './funds.ts';
+import { sweepSipContributions } from './repo.ts';
 
 const hasDb = !!process.env.DATABASE_URL;
 const email = (p: string) => `${p}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}@example.com`;
@@ -108,6 +109,31 @@ test('fund valuation: units × latest NAV, auto-set', { skip: hasDb ? false : 'D
       const a = await call('POST', `/api/households/${hh}/assets`, { name: 'Gold', assetClass: 'gold', value: 100000 }, tok);
       const f = await call('POST', `/api/assets/${a.body.id}/fund`, { schemeCode: '122639' }, tok);
       assert.equal(f.status, 400);
+    });
+
+    await t.test('SIP series auto-extends: new months appear without manual entry', async () => {
+      const a = await call('POST', `/api/households/${hh}/assets`, { name: 'Auto SIP', assetClass: 'sip', value: 1, monthlyContribution: 35000 }, tok);
+      const id = a.body.id;
+      // first installment ~2.5 months ago, on that day-of-month
+      const start = new Date(); start.setMonth(start.getMonth() - 2); start.setDate(10);
+      const startIso = start.toISOString().slice(0, 10);
+      await call('POST', `/api/assets/${id}/contributions`, { amount: 35000, on: startIso, note: 'SIP' }, tok);
+
+      const added = await sweepSipContributions();
+      assert.ok(added >= 1, 'sweep should add the missing months');
+      const rows = (await call('GET', `/api/assets/${id}/contributions`, undefined, tok)).body;
+      const sipRows = rows.filter((c: any) => c.note === 'SIP');
+      // one row per month from start to now, all on (or clamped near) the 10th
+      const now = new Date();
+      const expectedMonths = (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth())
+        + (now.getDate() >= 10 ? 1 : 0);
+      assert.equal(sipRows.length, Math.max(1, expectedMonths));
+      assert.ok(sipRows.every((c: any) => c.amount === 35000));
+      // idempotent — running again adds nothing
+      const again = await sweepSipContributions();
+      const rows2 = (await call('GET', `/api/assets/${id}/contributions`, undefined, tok)).body;
+      assert.equal(rows2.filter((c: any) => c.note === 'SIP').length, sipRows.length);
+      void again;
     });
 
     await t.test('unlink stops auto-valuation', async () => {

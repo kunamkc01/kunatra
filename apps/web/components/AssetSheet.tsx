@@ -110,6 +110,9 @@ export function AssetSheet({
   const [locality, setLocality] = useState(re?.locality ?? "");
   const [ptin, setPtin] = useState(re?.ptin ?? "");
 
+  const [sipStart, setSipStart] = useState(
+    existing?.acquiredYear != null ? `${existing.acquiredYear}-01-01` : "");
+
   // Mutual funds can be a monthly SIP or a one-time lump sum.
   const [mfMode, setMfMode] = useState<"monthly" | "lump">(
     existing?.assetClass === "mutual_fund" && existing.monthlyContribution == null ? "lump" : "monthly");
@@ -132,14 +135,22 @@ export function AssetSheet({
     setBusy(true);
     setErr(null);
 
-    const acqYear = year ? Number(year) : undefined;
+    const isRecurring = group === "recurring" && !mfLump;
+    const acqYear = isRecurring
+      ? (sipStart ? Number(sipStart.slice(0, 4)) : undefined)
+      : year ? Number(year) : undefined;
     const acqPrice = price ? Number(price) : undefined;
     const monthlyAmt = monthly ? Number(monthly) : undefined;
 
     // Derive engine fields from the story.
-    const isRecurring = group === "recurring" && !mfLump;
     let costBasis: number | null = null;
-    if (isRecurring) costBasis = monthlyAmt != null && acqYear ? monthlyAmt * monthsSince(acqYear) : null;
+    if (isRecurring) {
+      // months elapsed since the first installment (inclusive)
+      const months = sipStart
+        ? Math.max(1, (new Date().getFullYear() - Number(sipStart.slice(0, 4))) * 12 + (new Date().getMonth() + 1) - Number(sipStart.slice(5, 7)) + 1)
+        : acqYear ? monthsSince(acqYear) : null;
+      costBasis = monthlyAmt != null && months != null ? monthlyAmt * months : null;
+    }
     else if (group === "property" || lumpish) costBasis = acqPrice ?? null;
 
     const body: Partial<Asset> = {
@@ -178,8 +189,8 @@ export function AssetSheet({
         // Turn the acquisition story into a dated ledger so returns (XIRR) work.
         if (acqYear && (group === "property" || lumpish) && acqPrice) {
           await api.addContribution(created.id, { amount: acqPrice, on: `${acqYear}-01-01`, note: group === "property" || group === "lump" ? how : "invested" });
-        } else if (acqYear && isRecurring && monthlyAmt) {
-          await api.addSipSchedule(created.id, { amount: monthlyAmt, startOn: `${acqYear}-01-01` });
+        } else if (isRecurring && monthlyAmt && sipStart) {
+          await api.addSipSchedule(created.id, { amount: monthlyAmt, startOn: sipStart });
         }
       }
       onSaved();
@@ -292,14 +303,15 @@ export function AssetSheet({
                     <input inputMode="numeric" value={monthly} onChange={(e) => setMonthly(e.target.value)} placeholder="15000" />
                   </div>
                   <div className="field">
-                    <label>Since which year?</label>
-                    <input inputMode="numeric" value={year} onChange={(e) => setYear(e.target.value)} placeholder={String(thisYear - 3)} />
+                    <label>First installment on</label>
+                    <input type="date" value={sipStart} onChange={(e) => setSipStart(e.target.value)} />
+                    <div className="hint">The debit day matters — each installment buys at that day&apos;s NAV.</div>
                   </div>
                 </div>
                 <div className="field">
-                  <label>Worth today (₹)</label>
+                  <label>Worth today (₹) <span className="muted" style={{ fontWeight: 400 }}>· optional if you link the fund</span></label>
                   <input inputMode="numeric" value={value} onChange={(e) => setValue(e.target.value)} placeholder="700000" />
-                  <div className="hint">We'll build a monthly schedule from your start year to compute your return (XIRR).</div>
+                  <div className="hint">We build every monthly installment from your start date — past AND future months are added automatically. Link the fund after saving and the value computes itself from NAV.</div>
                 </div>
               </>
             )}

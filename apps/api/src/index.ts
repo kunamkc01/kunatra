@@ -337,7 +337,7 @@ if (isMain) {
   app.listen(port, () => console.log(`Kunatra API on :${port}`));
   // Compliance reminders: sweep on startup, then twice a day (the reminded_on
   // guard keeps it to one notification per item per day).
-  const dailySweeps = () => { remindDueCompliance(); rent.generateRentDue(); ops.sweepFixedWorkOrders(); valuation.sweepValuations(); funds.sweepFundValues(); history.sweepSnapshots(); access.purgeOldEvents(); };
+  const dailySweeps = () => { remindDueCompliance(); rent.generateRentDue(); ops.sweepFixedWorkOrders(); valuation.sweepValuations(); void repo.sweepSipContributions().then(() => funds.sweepFundValues()).catch(() => funds.sweepFundValues()); history.sweepSnapshots(); access.purgeOldEvents(); };
   dailySweeps();
   setInterval(dailySweeps, 12 * 60 * 60 * 1000).unref();
 }
