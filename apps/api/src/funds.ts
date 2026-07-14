@@ -122,9 +122,12 @@ export async function setFund(assetId: string, body: any): Promise<FundValuation
   const val = await computeValuation(assetId, schemeCode, schemeName);
   await db().query(
     `UPDATE assets SET fund_scheme_code = $2, fund_scheme_name = $3,
-        current_value_paise = COALESCE($4, current_value_paise), fund_valued_at = now()
+        current_value_paise = COALESCE($4, current_value_paise),
+        cost_basis_paise = COALESCE($5, cost_basis_paise), fund_valued_at = now()
       WHERE id = $1`,
-    [assetId, schemeCode, schemeName, val ? rupeesToPaise(val.currentValue) : null]);
+    [assetId, schemeCode, schemeName,
+     val ? rupeesToPaise(val.currentValue) : null,
+     val ? rupeesToPaise(val.invested) : null]);
   if (!val) throw new HttpError(422, 'no_investment_dates', 'Add your investment date(s) so we can compute units, then link the fund.');
   return { ...val, valuedAt: new Date().toISOString() };
 }
@@ -148,7 +151,9 @@ export async function refreshFundValue(assetId: string): Promise<void> {
   const r = rows[0];
   if (!r?.fund_scheme_code) return;
   const val = await computeValuation(assetId, r.fund_scheme_code, r.fund_scheme_name).catch(() => null);
-  if (val) await db().query(`UPDATE assets SET current_value_paise = $2, fund_valued_at = now() WHERE id = $1`, [assetId, rupeesToPaise(val.currentValue)]);
+  if (val) await db().query(
+    `UPDATE assets SET current_value_paise = $2, cost_basis_paise = $3, fund_valued_at = now() WHERE id = $1`,
+    [assetId, rupeesToPaise(val.currentValue), rupeesToPaise(val.invested)]);
 }
 
 /** Daily: refresh every fund-linked asset's value from the latest NAV. */

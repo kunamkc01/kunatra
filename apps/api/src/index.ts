@@ -216,9 +216,21 @@ app.post('/api/assets/:id/photos', editAssets, scopeOwned('assets'), h(async (re
 app.delete('/api/photos/:id', editAssets, scopeOwnedVia('SELECT a.household_id, a.member_id FROM asset_photos p JOIN assets a ON a.id = p.asset_id WHERE p.id = $1'), h(async (req, res) => { await repo.deletePhoto(req.params.id); res.sendStatus(204); }));
 
 app.get('/api/assets/:id/contributions', scopeResource('assets'), h(async (req, res) => res.json(await repo.listContributions(req.params.id))));
-app.post('/api/assets/:id/contributions', editOps, scopeResource('assets'), h(async (req, res) => res.status(201).json(await repo.addContribution(req.params.id, req.body))));
-app.post('/api/assets/:id/contributions/schedule', editOps, scopeResource('assets'), h(async (req, res) => res.status(201).json(await repo.addSipSchedule(req.params.id, req.body))));
-app.delete('/api/contributions/:id', editOps, scopeVia('SELECT a.household_id FROM contributions c JOIN assets a ON a.id = c.asset_id WHERE c.id = $1'), h(async (req, res) => { await repo.deleteContribution(req.params.id); res.sendStatus(204); }));
+app.post('/api/assets/:id/contributions', editOps, scopeResource('assets'), h(async (req, res) => {
+  const c = await repo.addContribution(req.params.id, req.body);
+  void funds.refreshFundValue(req.params.id); // keep a linked fund's value in step with its ledger
+  res.status(201).json(c);
+}));
+app.post('/api/assets/:id/contributions/schedule', editOps, scopeResource('assets'), h(async (req, res) => {
+  const r = await repo.addSipSchedule(req.params.id, req.body);
+  void funds.refreshFundValue(req.params.id);
+  res.status(201).json(r);
+}));
+app.delete('/api/contributions/:id', editOps, scopeVia('SELECT a.household_id FROM contributions c JOIN assets a ON a.id = c.asset_id WHERE c.id = $1'), h(async (req, res) => {
+  const owner = await repo.deleteContribution(req.params.id); // returns the asset id
+  if (owner) void funds.refreshFundValue(owner);
+  res.sendStatus(204);
+}));
 
 // ---- loans (owner + manager) ---------------------------------------------
 app.get('/api/households/:id/loans', sameHousehold, financialView, h(async (req, res) => res.json(await repo.listLoans(req.params.id))));

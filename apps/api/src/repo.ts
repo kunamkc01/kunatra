@@ -461,9 +461,10 @@ export async function addContribution(assetId: string, body: any) {
   return contributionRow(rows[0]);
 }
 
-export async function deleteContribution(id: string) {
-  const { rowCount } = await db().query(`DELETE FROM contributions WHERE id = $1`, [id]);
-  if (rowCount === 0) throw new HttpError(404, 'contribution_not_found');
+export async function deleteContribution(id: string): Promise<string | null> {
+  const { rows } = await db().query(`DELETE FROM contributions WHERE id = $1 RETURNING asset_id`, [id]);
+  if (rows.length === 0) throw new HttpError(404, 'contribution_not_found');
+  return rows[0].asset_id ?? null;
 }
 
 /** Monthly dates (same day-of-month, clamped) from startOn through untilOn inclusive. */

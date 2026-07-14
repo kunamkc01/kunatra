@@ -77,6 +77,27 @@ test('fund valuation: units × latest NAV, auto-set', { skip: hasDb ? false : 'D
       assert.equal(f.body.invested, 120000);
     });
 
+    await t.test('cost basis is synced to the actual invested', async () => {
+      const asset = (await call('GET', `/api/assets/${assetId}`, undefined, tok)).body;
+      assert.equal(asset.costBasis, 100000); // the contributions sum, not a stale estimate
+    });
+
+    await t.test('adding a contribution after linking refreshes the value + cost basis', async () => {
+      const a = await call('POST', `/api/households/${hh}/assets`, { name: 'Late SIP', assetClass: 'sip', value: 1 }, tok);
+      const id = a.body.id;
+      await call('POST', `/api/assets/${id}/contributions`, { amount: 60000, on: '2020-06-01' }, tok);  // nav 10 → 6000u
+      await call('POST', `/api/assets/${id}/fund`, { schemeCode: '122639' }, tok);                       // value 120000
+      await call('POST', `/api/assets/${id}/contributions`, { amount: 60000, on: '2023-06-01' }, tok);  // nav 15 → +4000u (async refresh)
+      let asset: any;
+      for (let i = 0; i < 40; i++) {
+        asset = (await call('GET', `/api/assets/${id}`, undefined, tok)).body;
+        if (asset.value === 200000) break;                 // 10000u × 20
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      assert.equal(asset.value, 200000);
+      assert.equal(asset.costBasis, 120000);               // 60k + 60k
+    });
+
     await t.test('no investment dates → clear 422, not a bogus value', async () => {
       const a = await call('POST', `/api/households/${hh}/assets`, { name: 'Bare fund', assetClass: 'mutual_fund', value: 50000 }, tok);
       const f = await call('POST', `/api/assets/${a.body.id}/fund`, { schemeCode: '122639' }, tok);
