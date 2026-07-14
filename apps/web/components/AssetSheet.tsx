@@ -112,6 +112,14 @@ export function AssetSheet({
 
   const [sipStart, setSipStart] = useState(
     existing?.acquiredYear != null ? `${existing.acquiredYear}-01-01` : "");
+  // The ledger is the truth for an existing series — show its real first installment.
+  useEffect(() => {
+    if (existing && groupOf(existing.assetClass) === "recurring") {
+      api.listContributions(existing.id)
+        .then((cs) => { if (cs.length) setSipStart(String(cs[0].on).slice(0, 10)); })
+        .catch(() => {});
+    }
+  }, [existing]);
 
   // Mutual funds can be a monthly SIP or a one-time lump sum.
   const [mfMode, setMfMode] = useState<"monthly" | "lump">(
@@ -156,13 +164,15 @@ export function AssetSheet({
     const body: Partial<Asset> = {
       name: name.trim(),
       assetClass,
-      value: value ? Number(value) : 0,
+      // A blank value on an EXISTING asset means "leave it" (e.g. NAV-tracked funds) — never stomp it to 0.
+      ...(existing && !value ? {} : { value: value ? Number(value) : 0 }),
       liquid,
       memberId: memberId || null,
       // A deposit or one-time fund is simply "bought"; property/gold/equity keep the story.
       acquiredHow: group === "property" || group === "lump" ? how : lumpish ? "bought" : null,
       acquiredYear: acqYear ?? null,
-      costBasis,
+      // An existing series' cost basis comes from its ledger (and fund sync) — don't overwrite with an estimate.
+      ...(existing && isRecurring ? {} : { costBasis }),
       monthlyContribution: isRecurring ? (monthlyAmt ?? null) : null,
       monthlyRent: group === "property" && usage === "rented" ? (rent ? Number(rent) : null) : null,
       rentTds: group === "property" && usage === "rented" ? (rentTds ? Number(rentTds) : null) : null,
@@ -304,8 +314,8 @@ export function AssetSheet({
                   </div>
                   <div className="field">
                     <label>First installment on</label>
-                    <input type="date" value={sipStart} onChange={(e) => setSipStart(e.target.value)} />
-                    <div className="hint">The debit day matters — each installment buys at that day&apos;s NAV.</div>
+                    <input type="date" value={sipStart} onChange={(e) => setSipStart(e.target.value)} disabled={!!existing} />
+                    <div className="hint">{existing ? "From your ledger — adjust the money-in/out entries below to change history." : "The debit day matters — each installment buys at that day's NAV."}</div>
                   </div>
                 </div>
                 <div className="field">

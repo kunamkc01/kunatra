@@ -173,6 +173,18 @@ test('fund valuation: units × latest NAV, auto-set', { skip: hasDb ? false : 'D
       void again;
     });
 
+    await t.test('editing a fund-linked asset cannot leave a stale/zero value', async () => {
+      // A client bug once PATCHed value:0 over a NAV-computed figure — the server now re-values after any edit.
+      await call('PATCH', `/api/assets/${assetId}`, { name: 'Renamed fund', value: 0 }, tok);
+      let asset: any;
+      for (let i = 0; i < 40; i++) {
+        asset = (await call('GET', `/api/assets/${assetId}`, undefined, tok)).body;
+        if (asset.value === 200000) break;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      assert.equal(asset.value, 200000);   // NAV authority restored
+    });
+
     await t.test('unlink stops auto-valuation', async () => {
       await call('DELETE', `/api/assets/${assetId}/fund`, undefined, tok);
       const g = await call('GET', `/api/assets/${assetId}/fund`, undefined, tok);

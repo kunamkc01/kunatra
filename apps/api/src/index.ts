@@ -169,6 +169,8 @@ app.patch('/api/assets/:id', editAssets, scopeOwned('assets'), h(async (req, res
     if (locationChanged) void valuation.requestOnLocationChange(updated.id);
     else if ('realEstate' in req.body || 'monthlyRent' in req.body) void valuation.requestIfStale(updated.id);
   }
+  // A fund-linked asset's value is NAV-derived — no edit may leave it stale or zeroed.
+  void funds.refreshFundValue(updated.id);
   res.json(updated);
 }));
 
