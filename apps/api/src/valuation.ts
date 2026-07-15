@@ -5,7 +5,11 @@
 import { BedrockRuntimeClient, ConverseCommand } from '@aws-sdk/client-bedrock-runtime';
 import { db, rupeesToPaise, paiseToRupees, HttpError } from './pool.ts';
 
-export const PROMPT_VERSION = 'v2';
+// v3: purchase price/year removed from the prompt — benchmarked 2026-07-14 on
+// real properties vs known ground truths: with the anchor the model priced
+// 16.2% off (dragged toward old purchase prices); without it, 4.8% off, and
+// fresh purchases didn't inflate. Also one less financial datum sent out.
+export const PROMPT_VERSION = 'v3';
 const REGION = process.env.NOTIFY_REGION ?? process.env.AWS_REGION ?? 'us-east-1';
 const MODEL_ID = process.env.BEDROCK_MODEL_ID ?? 'us.amazon.nova-pro-v1:0';
 const REFRESH_DAYS = 90;          // scheduled refresh
@@ -33,7 +37,9 @@ function buildPrompt(i: ValuationInput): string {
   const known = Object.entries({
     city: i.city, locality: i.locality, address: i.address, property_type: i.propertyType,
     built_up_area_sqft: i.sqft, bedrooms: i.bedrooms, bathrooms: i.bathrooms, floor: i.floor,
-    built_year: i.builtYear, purchase_price_inr: i.purchasePrice, purchase_year: i.purchaseYear,
+    built_year: i.builtYear,
+    // purchase price/year deliberately NOT sent — it anchors the model to stale
+    // price levels (see PROMPT_VERSION note) and needn't leave the household.
     current_monthly_rent_inr: i.monthlyRent,
   }).filter(([, v]) => v != null && v !== '');
   const today = new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
