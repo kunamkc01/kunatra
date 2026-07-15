@@ -131,6 +131,35 @@ export function parseEstimate(text: string, sqft: number | null, monthlyRent?: n
   return { estimatedValue: est, lowValue: low, highValue: high, pricePerSqft: ppsf, estimatedMonthlyRent: rent, rentalYieldPct: yieldPct, annualGrowthPct: growth, confidence, summary, reasons };
 }
 
+// ---- income method (rental buildings) ----------------------------------------
+// The LLM reliably fails on whole rental buildings (it outputs values its own
+// yield claim contradicts), so they're valued deterministically from the rent:
+// value = annual gross rent ÷ yield, at Hyderabad-typical residential yields of
+// 2–4% (land under a prime-belt building pushes toward the low-yield/high-value
+// end). Labeled as its own method; confidence low; the user's value stands.
+export const INCOME_METHOD_VERSION = 'income-v1';
+export function isIncomeBuilding(i: ValuationInput): boolean {
+  return !!(i.monthlyRent && i.monthlyRent > 0 && i.propertyType && /multi[- ]?unit|whole building|apartment building|independent building.*rented/i.test(i.propertyType));
+}
+export function incomeEstimate(monthlyRent: number, sqft: number | null): Estimate {
+  const annual = monthlyRent * 12;
+  const low = Math.round(annual / 0.04);   // 4% yield — conservative
+  const mid = Math.round(annual / 0.03);   // 3% — typical
+  const high = Math.round(annual / 0.02);  // 2% — prime-belt land-heavy
+  return {
+    estimatedValue: mid, lowValue: low, highValue: high,
+    pricePerSqft: sqft && sqft > 0 ? Math.round(mid / sqft) : null,
+    estimatedMonthlyRent: monthlyRent, rentalYieldPct: 3, annualGrowthPct: null,
+    confidence: 'low',
+    summary: `Income-based estimate from the rent you actually collect (₹${Math.round(annual).toLocaleString('en-IN')}/yr at 2–4% gross yield, typical for Hyderabad residential buildings).`,
+    reasons: [
+      'Whole rental buildings are valued from income, not per-flat comparisons.',
+      'The land under a prime-locality building pushes value toward the top of the range.',
+      'AI price models are unreliable for this asset class, so this is arithmetic, not an AI guess.',
+    ],
+  };
+}
+
 // ---- the worker --------------------------------------------------------------
 
 async function loadInput(assetId: string): Promise<{ householdId: string; input: ValuationInput } | null> {
@@ -159,9 +188,13 @@ async function processValuation(assetId: string): Promise<void> {
     const loaded = await loadInput(assetId);
     if (!loaded) return;
     let est: Estimate | null = null;
-    for (let attempt = 0; attempt < 2 && !est; attempt++) {   // retry once
-      try { est = parseEstimate(await provider(loaded.input, MODEL_ID), loaded.input.sqft, loaded.input.monthlyRent); }
-      catch (e: any) { console.error(`[valuation] ${assetId} attempt ${attempt + 1}: ${e?.name ?? e?.message}`); }
+    if (isIncomeBuilding(loaded.input)) {
+      est = incomeEstimate(loaded.input.monthlyRent!, loaded.input.sqft);
+    } else {
+      for (let attempt = 0; attempt < 2 && !est; attempt++) {   // retry once
+        try { est = parseEstimate(await provider(loaded.input, MODEL_ID), loaded.input.sqft, loaded.input.monthlyRent); }
+        catch (e: any) { console.error(`[valuation] ${assetId} attempt ${attempt + 1}: ${e?.name ?? e?.message}`); }
+      }
     }
     if (!est) {
       await db().query(`UPDATE property_valuations SET status = 'unavailable', updated_at = now() WHERE asset_id = $1`, [assetId]);
@@ -178,7 +211,8 @@ async function processValuation(assetId: string): Promise<void> {
        est.pricePerSqft != null ? rupeesToPaise(est.pricePerSqft) : null,
        est.estimatedMonthlyRent != null ? rupeesToPaise(est.estimatedMonthlyRent) : null,
        est.rentalYieldPct, est.annualGrowthPct, est.confidence, est.summary, JSON.stringify(est.reasons),
-       MODEL_ID, PROMPT_VERSION]
+       isIncomeBuilding(loaded.input) ? 'income_method' : MODEL_ID,
+       isIncomeBuilding(loaded.input) ? INCOME_METHOD_VERSION : PROMPT_VERSION]
     );
     // Every estimate is also a dated point — over refreshes this is the trendline.
     await db().query(
@@ -186,7 +220,8 @@ async function processValuation(assetId: string): Promise<void> {
        VALUES ($1, $2, now(), $3, $4, $5, $6, $7, $8, $9)`,
       [assetId, loaded.householdId, rupeesToPaise(est.estimatedValue), rupeesToPaise(est.lowValue), rupeesToPaise(est.highValue),
        est.estimatedMonthlyRent != null ? rupeesToPaise(est.estimatedMonthlyRent) : null,
-       est.confidence, MODEL_ID, PROMPT_VERSION]
+       est.confidence, isIncomeBuilding(loaded.input) ? 'income_method' : MODEL_ID,
+       isIncomeBuilding(loaded.input) ? INCOME_METHOD_VERSION : PROMPT_VERSION]
     );
   } catch (e: any) {
     console.error(`[valuation] ${assetId} failed: ${e?.message}`);

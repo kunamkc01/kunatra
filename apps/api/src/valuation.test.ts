@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
 import { app } from './index.ts';
-import { _setProviderForTests, parseEstimate } from './valuation.ts';
+import { _setProviderForTests, parseEstimate, incomeEstimate, isIncomeBuilding } from './valuation.ts';
 
 const hasDb = !!process.env.DATABASE_URL;
 const email = (p: string) => `${p}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}@example.com`;
@@ -34,6 +34,19 @@ test('parseEstimate sanity rules (pure)', () => {
   const lowball = JSON.stringify({ estimatedValue: 19000000, lowValue: 18000000, highValue: 20000000 });
   assert.equal(parseEstimate(lowball, 10500, 420000), null);
   assert.ok(parseEstimate(lowball, 10500, 30000)); // same numbers, modest rent → fine
+});
+
+test('income method for rental buildings (pure)', () => {
+  // ₹4.2L/mo → ₹50.4L/yr → 2–4% yield band
+  const e = incomeEstimate(420000, 10500);
+  assert.equal(e.lowValue, 126000000);    // 4% yield
+  assert.equal(e.estimatedValue, 168000000); // 3%
+  assert.equal(e.highValue, 252000000);   // 2%
+  assert.equal(e.pricePerSqft, 16000);
+  assert.equal(e.confidence, 'low');
+  assert.ok(isIncomeBuilding({ propertyType: 'independent multi-unit apartment building, fully rented', monthlyRent: 420000 } as any));
+  assert.ok(!isIncomeBuilding({ propertyType: 'apartment', monthlyRent: 30000 } as any));
+  assert.ok(!isIncomeBuilding({ propertyType: 'multi-unit building', monthlyRent: null } as any));
 });
 
 test('property valuation flow', { skip: hasDb ? false : 'DATABASE_URL not set' }, async (t) => {
@@ -120,6 +133,20 @@ test('property valuation flow', { skip: hasDb ? false : 'DATABASE_URL not set' }
       assert.equal(f.body.feedback, 'too_high');
       assert.equal(f.body.userValue, 8800000);
       assert.equal((await call('POST', `/api/assets/${assetId}/valuation/feedback`, { feedback: 'meh' }, ownerTok)).status, 400);
+    });
+
+    await t.test('a rented multi-unit building is valued from income, not the model', async () => {
+      _setProviderForTests(async () => { throw new Error('model must not be called for income buildings'); });
+      const b = await call('POST', `/api/households/${householdId}/assets`, {
+        name: 'Rental building', assetClass: 'real_estate', value: 100000000, monthlyRent: 420000,
+        realEstate: { city: 'Hyderabad', locality: 'Madhapur', sqft: 10500, propertyType: 'independent multi-unit apartment building, fully rented' },
+      }, ownerTok);
+      const v = await waitForStatus(b.body.id, 'ok', ownerTok);
+      assert.equal(v.estimatedValue, 168000000);   // ₹50.4L/yr ÷ 3%
+      assert.equal(v.lowValue, 126000000);
+      assert.equal(v.highValue, 252000000);
+      assert.equal(v.provider, 'income_method');
+      _setProviderForTests(async () => GOOD);
     });
 
     await t.test('no city/locality/address → not estimated (never guesses a location)', async () => {
