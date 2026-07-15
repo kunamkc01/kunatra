@@ -35,6 +35,15 @@ export interface ValuationInput {
 /** A provider returns the model's raw text for our prompt (we parse/validate). */
 export type ValuationProvider = (input: ValuationInput, modelId: string) => Promise<string>;
 
+export type PropertyCategory = 'residential' | 'commercial' | 'agricultural';
+/** Commercial and farmland price on different math than homes — branch by type. */
+export function categoryOf(propertyType: string | null): PropertyCategory {
+  const t = (propertyType ?? '').toLowerCase();
+  if (/office|commercial|retail|shop|showroom|warehouse|industrial/.test(t)) return 'commercial';
+  if (/agricultur|farm ?land|farm$/.test(t)) return 'agricultural';
+  return 'residential';
+}
+
 function buildPrompt(i: ValuationInput): string {
   const known = Object.entries({
     city: i.city, locality: i.locality, address: i.address, property_type: i.propertyType,
@@ -48,12 +57,15 @@ function buildPrompt(i: ValuationInput): string {
     current_monthly_rent_inr: i.monthlyRent,
   }).filter(([, v]) => v != null && v !== '');
   const today = new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+  const cat = categoryOf(i.propertyType);
   return [
-    `You are an Indian residential real-estate analyst with current market knowledge. Estimate what this property would actually SELL for today, in ${today}.`,
+    `You are an Indian ${cat === 'commercial' ? 'COMMERCIAL' : 'residential'} real-estate analyst with current market knowledge. Estimate what this property would actually SELL for today, in ${today}.`,
     'IMPORTANT: prices in Indian metros — especially Hyderabad, Bengaluru, Pune and NCR — have appreciated steeply in recent years.',
     'Your training data likely reflects older, lower price levels; adjust upward to realistic current transaction prices for the specific locality.',
     'Do not lowball. Reflect genuine uncertainty in the low–high range and the confidence field, not by deflating the midpoint.',
-    ...(i.monthlyRent ? ['Sanity check: Indian metro residential gross rental yields typically run 2–5% — the sale value must be consistent with the stated rent (value ≈ annual rent ÷ yield).'] : []),
+    ...(i.monthlyRent ? [cat === 'commercial'
+      ? 'Sanity check: Indian metro COMMERCIAL gross yields typically run 6–9% (offices; retail up to ~10%) — the sale value must be consistent with the stated rent (value ≈ annual rent ÷ yield).'
+      : 'Sanity check: Indian metro residential gross rental yields typically run 2–5% — the sale value must be consistent with the stated rent (value ≈ annual rent ÷ yield).'] : []),
     'All money in INR (rupees, plain integers).',
     '',
     'Property:',
@@ -139,22 +151,26 @@ export function parseEstimate(text: string, sqft: number | null, monthlyRent?: n
 // end). Labeled as its own method; confidence low; the user's value stands.
 export const INCOME_METHOD_VERSION = 'income-v1';
 export function isIncomeBuilding(i: ValuationInput): boolean {
-  return !!(i.monthlyRent && i.monthlyRent > 0 && i.propertyType && /multi[- ]?unit|whole building|apartment building|independent building.*rented/i.test(i.propertyType));
+  return !!(i.monthlyRent && i.monthlyRent > 0 && i.propertyType && /multi[- ]?unit|whole building|apartment building|commercial building|independent building.*rented/i.test(i.propertyType));
 }
-export function incomeEstimate(monthlyRent: number, sqft: number | null): Estimate {
+export function incomeEstimate(monthlyRent: number, sqft: number | null, category: PropertyCategory = 'residential'): Estimate {
   const annual = monthlyRent * 12;
-  const low = Math.round(annual / 0.04);   // 4% yield — conservative
-  const mid = Math.round(annual / 0.03);   // 3% — typical
-  const high = Math.round(annual / 0.02);  // 2% — prime-belt land-heavy
+  // Yield bands: residential buildings trade at 2–4% gross; commercial at 6–9%.
+  const [loY, midY, hiY] = category === 'commercial' ? [0.09, 0.075, 0.06] : [0.04, 0.03, 0.02];
+  const low = Math.round(annual / loY);
+  const mid = Math.round(annual / midY);
+  const high = Math.round(annual / hiY);
   return {
     estimatedValue: mid, lowValue: low, highValue: high,
     pricePerSqft: sqft && sqft > 0 ? Math.round(mid / sqft) : null,
-    estimatedMonthlyRent: monthlyRent, rentalYieldPct: 3, annualGrowthPct: null,
+    estimatedMonthlyRent: monthlyRent, rentalYieldPct: midY * 100, annualGrowthPct: null,
     confidence: 'low',
-    summary: `Income-based estimate from the rent you actually collect (₹${Math.round(annual).toLocaleString('en-IN')}/yr at 2–4% gross yield, typical for Hyderabad residential buildings).`,
+    summary: `Income-based estimate from the rent you actually collect (₹${Math.round(annual).toLocaleString('en-IN')}/yr at ${Math.round(hiY * 100)}–${Math.round(loY * 100)}% gross yield, typical for Hyderabad ${category === 'commercial' ? 'commercial' : 'residential'} buildings).`,
     reasons: [
-      'Whole rental buildings are valued from income, not per-flat comparisons.',
-      'The land under a prime-locality building pushes value toward the top of the range.',
+      'Whole rental buildings are valued from income, not per-unit comparisons.',
+      category === 'commercial'
+        ? 'Commercial assets trade at higher yields (6–9%) than homes — the same rent implies a lower price than a residential building.'
+        : 'The land under a prime-locality building pushes value toward the top of the range.',
       'AI price models are unreliable for this asset class, so this is arithmetic, not an AI guess.',
     ],
   };
@@ -189,7 +205,7 @@ async function processValuation(assetId: string): Promise<void> {
     if (!loaded) return;
     let est: Estimate | null = null;
     if (isIncomeBuilding(loaded.input)) {
-      est = incomeEstimate(loaded.input.monthlyRent!, loaded.input.sqft);
+      est = incomeEstimate(loaded.input.monthlyRent!, loaded.input.sqft, categoryOf(loaded.input.propertyType));
     } else {
       for (let attempt = 0; attempt < 2 && !est; attempt++) {   // retry once
         try { est = parseEstimate(await provider(loaded.input, MODEL_ID), loaded.input.sqft, loaded.input.monthlyRent); }
@@ -242,6 +258,15 @@ export async function requestValuation(assetId: string): Promise<boolean> {
   // Without a location we'd only be guessing — and the model defaults to a metro
   // (Hyderabad). The property name is never sent (it carries the family name), so
   // it can't supply a location either. Mark unavailable instead of fabricating.
+  if (categoryOf(loaded.input.propertyType) === 'agricultural') {
+    await db().query(
+      `INSERT INTO property_valuations (asset_id, household_id, status, summary, generated_at, updated_at)
+       VALUES ($1, $2, 'unavailable', $3, NULL, now())
+       ON CONFLICT (asset_id) DO UPDATE SET status = 'unavailable', summary = $3, generated_at = NULL, updated_at = now()`,
+      [assetId, loaded.householdId, 'Agricultural land isn’t estimated yet — farm values turn on per-acre transactions, irrigation and road frontage. Enter your own value; it stays authoritative.']
+    );
+    return true;
+  }
   if (!hasResolvableLocation(loaded.input)) {
     await db().query(
       `INSERT INTO property_valuations (asset_id, household_id, status, summary, generated_at, updated_at)

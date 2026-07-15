@@ -428,10 +428,25 @@ export function AssetSheet({
                     <label>Type</label>
                     <select value={propertyType} onChange={(e) => setPropertyType(e.target.value)}>
                       <option value="">—</option>
-                      <option value="apartment">Apartment</option>
-                      <option value="independent">Independent house</option>
-                      <option value="villa">Villa</option>
-                      <option value="plot">Plot / land</option>
+                      <optgroup label="Residential">
+                        <option value="apartment">Apartment</option>
+                        <option value="independent">Independent house</option>
+                        <option value="villa">Villa</option>
+                        <option value="plot">Plot / land</option>
+                        <option value="multi-unit rental building">Multi-unit rental building</option>
+                      </optgroup>
+                      <optgroup label="Commercial">
+                        <option value="office space">Office space</option>
+                        <option value="retail shop / showroom">Retail shop / showroom</option>
+                        <option value="commercial building (rented)">Commercial building (rented)</option>
+                        <option value="warehouse / industrial">Warehouse / industrial</option>
+                      </optgroup>
+                      <optgroup label="Other">
+                        <option value="agricultural land / farm">Agricultural land / farm</option>
+                      </optgroup>
+                      {propertyType && !["apartment","independent","villa","plot","multi-unit rental building","office space","retail shop / showroom","commercial building (rented)","warehouse / industrial","agricultural land / farm"].includes(propertyType) && (
+                        <option value={propertyType}>{propertyType}</option>
+                      )}
                     </select>
                   </div>
                   <div className="field"><label>Built year</label><input inputMode="numeric" value={builtYear} onChange={(e) => setBuiltYear(e.target.value)} placeholder="2012" /></div>

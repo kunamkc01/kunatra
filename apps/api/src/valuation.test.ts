@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
 import { app } from './index.ts';
-import { _setProviderForTests, parseEstimate, incomeEstimate, isIncomeBuilding } from './valuation.ts';
+import { _setProviderForTests, parseEstimate, incomeEstimate, isIncomeBuilding, categoryOf } from './valuation.ts';
 
 const hasDb = !!process.env.DATABASE_URL;
 const email = (p: string) => `${p}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}@example.com`;
@@ -47,6 +47,24 @@ test('income method for rental buildings (pure)', () => {
   assert.ok(isIncomeBuilding({ propertyType: 'independent multi-unit apartment building, fully rented', monthlyRent: 420000 } as any));
   assert.ok(!isIncomeBuilding({ propertyType: 'apartment', monthlyRent: 30000 } as any));
   assert.ok(!isIncomeBuilding({ propertyType: 'multi-unit building', monthlyRent: null } as any));
+});
+
+test('property categories + commercial income band (pure)', () => {
+  assert.equal(categoryOf('office space'), 'commercial');
+  assert.equal(categoryOf('retail shop / showroom'), 'commercial');
+  assert.equal(categoryOf('commercial building (rented)'), 'commercial');
+  assert.equal(categoryOf('warehouse / industrial'), 'commercial');
+  assert.equal(categoryOf('agricultural land / farm'), 'agricultural');
+  assert.equal(categoryOf('apartment'), 'residential');
+  assert.equal(categoryOf(null), 'residential');
+
+  // ₹3L/mo commercial rent → ₹36L/yr at 6–9% yields
+  const e = incomeEstimate(300000, 4800, 'commercial');
+  assert.equal(e.lowValue, 40000000);      // 9%
+  assert.equal(e.estimatedValue, 48000000); // 7.5%
+  assert.equal(e.highValue, 60000000);     // 6%
+  // same rent as a residential building would price 2.5–3x higher — the band matters
+  assert.ok(incomeEstimate(300000, 4800, 'residential').estimatedValue > 2 * e.estimatedValue);
 });
 
 test('property valuation flow', { skip: hasDb ? false : 'DATABASE_URL not set' }, async (t) => {
@@ -133,6 +151,15 @@ test('property valuation flow', { skip: hasDb ? false : 'DATABASE_URL not set' }
       assert.equal(f.body.feedback, 'too_high');
       assert.equal(f.body.userValue, 8800000);
       assert.equal((await call('POST', `/api/assets/${assetId}/valuation/feedback`, { feedback: 'meh' }, ownerTok)).status, 400);
+    });
+
+    await t.test('agricultural land is not estimated (no per-acre method yet)', async () => {
+      const b = await call('POST', `/api/households/${householdId}/assets`, {
+        name: 'Family farm', assetClass: 'real_estate', value: 15000000,
+        realEstate: { city: 'Cumbum', locality: 'Prakasam district', sqft: 43560, propertyType: 'agricultural land / farm' },
+      }, ownerTok);
+      const v = await waitForStatus(b.body.id, 'unavailable', ownerTok);
+      assert.ok(/agricultural/i.test(v.summary ?? ''));
     });
 
     await t.test('a rented multi-unit building is valued from income, not the model', async () => {
