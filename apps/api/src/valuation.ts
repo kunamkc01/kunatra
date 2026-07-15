@@ -151,7 +151,11 @@ export function parseEstimate(text: string, sqft: number | null, monthlyRent?: n
 // end). Labeled as its own method; confidence low; the user's value stands.
 export const INCOME_METHOD_VERSION = 'income-v1';
 export function isIncomeBuilding(i: ValuationInput): boolean {
-  return !!(i.monthlyRent && i.monthlyRent > 0 && i.propertyType && /multi[- ]?unit|whole building|apartment building|commercial building|independent building.*rented/i.test(i.propertyType));
+  if (!i.monthlyRent || i.monthlyRent <= 0) return false;
+  // Rented commercial (an office floor, a showroom) is a pure income asset —
+  // cap-rate math is the standard valuation and the model lowballs it anyway.
+  if (categoryOf(i.propertyType) === 'commercial') return true;
+  return !!(i.propertyType && /multi[- ]?unit|whole building|apartment building|independent building.*rented/i.test(i.propertyType));
 }
 export function incomeEstimate(monthlyRent: number, sqft: number | null, category: PropertyCategory = 'residential'): Estimate {
   const annual = monthlyRent * 12;

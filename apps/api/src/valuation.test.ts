@@ -58,6 +58,10 @@ test('property categories + commercial income band (pure)', () => {
   assert.equal(categoryOf('apartment'), 'residential');
   assert.equal(categoryOf(null), 'residential');
 
+  // any RENTED commercial asset routes to the income method (cap rate is the standard)
+  assert.ok(isIncomeBuilding({ propertyType: 'office space', monthlyRent: 300000 } as any));
+  assert.ok(!isIncomeBuilding({ propertyType: 'office space', monthlyRent: null } as any));
+
   // ₹3L/mo commercial rent → ₹36L/yr at 6–9% yields
   const e = incomeEstimate(300000, 4800, 'commercial');
   assert.equal(e.lowValue, 40000000);      // 9%
