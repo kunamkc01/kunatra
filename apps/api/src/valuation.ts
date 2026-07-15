@@ -5,11 +5,13 @@
 import { BedrockRuntimeClient, ConverseCommand } from '@aws-sdk/client-bedrock-runtime';
 import { db, rupeesToPaise, paiseToRupees, HttpError } from './pool.ts';
 
-// v3: purchase price/year removed from the prompt — benchmarked 2026-07-14 on
-// real properties vs known ground truths: with the anchor the model priced
-// 16.2% off (dragged toward old purchase prices); without it, 4.8% off, and
-// fresh purchases didn't inflate. Also one less financial datum sent out.
-export const PROMPT_VERSION = 'v3';
+// v3 (2026-07-14): purchase price removed — the model anchored to stale prices
+// (16.2% off vs 4.8% without, on apartment benchmarks).
+// v4 (same day): the sweep showed v3 collapsing LARGE/unusual assets (a 10,500
+// sqft building; a villa bought 2024 estimated BELOW its own purchase). A
+// recent purchase IS current market data, so: include the price only when the
+// purchase is ≤3 years old, labeled a recent transaction; omit older ones.
+export const PROMPT_VERSION = 'v4';
 const REGION = process.env.NOTIFY_REGION ?? process.env.AWS_REGION ?? 'us-east-1';
 const MODEL_ID = process.env.BEDROCK_MODEL_ID ?? 'us.amazon.nova-pro-v1:0';
 const REFRESH_DAYS = 90;          // scheduled refresh
@@ -38,8 +40,11 @@ function buildPrompt(i: ValuationInput): string {
     city: i.city, locality: i.locality, address: i.address, property_type: i.propertyType,
     built_up_area_sqft: i.sqft, bedrooms: i.bedrooms, bathrooms: i.bathrooms, floor: i.floor,
     built_year: i.builtYear,
-    // purchase price/year deliberately NOT sent — it anchors the model to stale
-    // price levels (see PROMPT_VERSION note) and needn't leave the household.
+    // A stale purchase price anchors the model to old market levels, so only a
+    // RECENT purchase (≤3y — genuinely current market data) is shared.
+    ...(i.purchasePrice != null && i.purchaseYear != null && i.purchaseYear >= new Date().getFullYear() - 3
+      ? { [`recent_transaction_price_inr_(bought_${i.purchaseYear})`]: i.purchasePrice }
+      : {}),
     current_monthly_rent_inr: i.monthlyRent,
   }).filter(([, v]) => v != null && v !== '');
   const today = new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
@@ -48,6 +53,7 @@ function buildPrompt(i: ValuationInput): string {
     'IMPORTANT: prices in Indian metros — especially Hyderabad, Bengaluru, Pune and NCR — have appreciated steeply in recent years.',
     'Your training data likely reflects older, lower price levels; adjust upward to realistic current transaction prices for the specific locality.',
     'Do not lowball. Reflect genuine uncertainty in the low–high range and the confidence field, not by deflating the midpoint.',
+    ...(i.monthlyRent ? ['Sanity check: Indian metro residential gross rental yields typically run 2–5% — the sale value must be consistent with the stated rent (value ≈ annual rent ÷ yield).'] : []),
     'All money in INR (rupees, plain integers).',
     '',
     'Property:',
@@ -86,7 +92,7 @@ interface Estimate {
 }
 
 /** Parse the model text and sanity-check it. Returns null when it can't be trusted. */
-export function parseEstimate(text: string, sqft: number | null): Estimate | null {
+export function parseEstimate(text: string, sqft: number | null, monthlyRent?: number | null): Estimate | null {
   // tolerate accidental markdown fences
   const m = text.match(/\{[\s\S]*\}/);
   if (!m) return null;
@@ -109,6 +115,10 @@ export function parseEstimate(text: string, sqft: number | null): Estimate | nul
 
   const rent = num(j.estimatedMonthlyRent);
   if (rent != null && (rent < 0 || rent > est)) return null;
+  // A value implying a gross yield beyond ~12.5% on the KNOWN rent is not a
+  // believable Indian residential price (typical 2–5%) — the model has misread
+  // the property. Better unavailable than absurd.
+  if (monthlyRent && monthlyRent > 0 && est < monthlyRent * 12 * 8) return null;
   const yieldPct = num(j.rentalYieldPct);
   if (yieldPct != null && (yieldPct < 0 || yieldPct > 25)) return null;
   const growth = num(j.annualGrowthPct);
@@ -150,7 +160,7 @@ async function processValuation(assetId: string): Promise<void> {
     if (!loaded) return;
     let est: Estimate | null = null;
     for (let attempt = 0; attempt < 2 && !est; attempt++) {   // retry once
-      try { est = parseEstimate(await provider(loaded.input, MODEL_ID), loaded.input.sqft); }
+      try { est = parseEstimate(await provider(loaded.input, MODEL_ID), loaded.input.sqft, loaded.input.monthlyRent); }
       catch (e: any) { console.error(`[valuation] ${assetId} attempt ${attempt + 1}: ${e?.name ?? e?.message}`); }
     }
     if (!est) {

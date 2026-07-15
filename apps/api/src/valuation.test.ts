@@ -29,6 +29,11 @@ test('parseEstimate sanity rules (pure)', () => {
   assert.equal(parseEstimate(JSON.stringify({ estimatedValue: 9500000, lowValue: 9000000, highValue: 9900000, pricePerSqft: 900000 }), null), null);
   // markdown fences tolerated
   assert.ok(parseEstimate('```json\n' + GOOD + '\n```', 1450));
+  // a value the KNOWN rent contradicts (implied yield >12.5%) is rejected:
+  // ₹4.2L/mo rent on a ₹1.9Cr "estimate" = ~26% yield — not a believable price
+  const lowball = JSON.stringify({ estimatedValue: 19000000, lowValue: 18000000, highValue: 20000000 });
+  assert.equal(parseEstimate(lowball, 10500, 420000), null);
+  assert.ok(parseEstimate(lowball, 10500, 30000)); // same numbers, modest rent → fine
 });
 
 test('property valuation flow', { skip: hasDb ? false : 'DATABASE_URL not set' }, async (t) => {
