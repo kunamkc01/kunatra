@@ -342,3 +342,31 @@ tbody tr:last-child td { border-bottom: 0; }
 /* Firm vs perceived split under the net-worth headline */
 .nw-split { font-size: 12.5px; color: var(--slate); margin-top: 7px; }
 .nw-split b { font-weight: 600; color: var(--ink); }
+
+/* Persona lenses (home) */
+.lens { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.lens .chipbtn { font-size: 11.5px; font-weight: 500; padding: 5px 13px; border-radius: 999px; border: 1px solid var(--line); background: var(--tint); color: var(--slate); cursor: pointer; font-family: inherit; }
+.lens .chipbtn.on { background: var(--navy); color: #fff; border-color: var(--navy); }
+.lens .lens-auto { font-size: 10px; color: var(--muted); }
+.strip4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 10px; }
+@media (max-width: 620px) { .strip4 { grid-template-columns: repeat(2, 1fr); } }
+.ministat { background: var(--tint); border-radius: 10px; padding: 11px 12px; border-left: 3px solid transparent; }
+.ministat .v { font-family: var(--serif); font-weight: 500; font-size: 20px; }
+.ministat .k { font-size: 10.5px; color: var(--slate); margin-top: 2px; }
+.ministat.g { border-left-color: var(--good); } .ministat.g .v { color: var(--good); }
+.ministat.b { border-left-color: var(--bad); } .ministat.b .v { color: var(--bad); }
+.ministat.acc { border-left-color: var(--accent); }
+.lens-chips { display: flex; gap: 7px; flex-wrap: wrap; margin: 2px 0 4px; }
+.rentbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--good-bg); color: var(--good); border-radius: 10px; padding: 11px 14px; font-size: 13px; font-weight: 500; margin-bottom: 8px; }
+.rentbar.due { background: var(--warn-bg); color: var(--warn); }
+.rentbar .occ { display: flex; gap: 4px; margin-left: auto; }
+.rentbar .occ i { width: 9px; height: 9px; border-radius: 50%; background: currentColor; display: block; }
+.rentbar .occ i.pending { opacity: 0.3; }
+.rentbar-go { font-size: 11.5px; color: inherit; }
+.fold { border: 1px solid var(--line); border-radius: 11px; background: var(--surface); margin-top: 8px; }
+.fold-head { display: flex; align-items: baseline; gap: 10px; width: 100%; text-align: left; background: none; border: 0; cursor: pointer; font: inherit; padding: 11px 14px; }
+.fold-head .fh { font-size: 12.5px; font-weight: 600; color: var(--ink); white-space: nowrap; }
+.fold-head .fs { font-size: 11px; color: var(--slate); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fold-head .go { margin-left: auto; color: var(--muted); flex: none; }
+.fold.open { border-color: var(--line-strong); }
+.fold-body { padding: 0 14px 14px; }
